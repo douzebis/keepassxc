@@ -18,9 +18,11 @@
 #include "DatabaseTabWidget.h"
 
 #include <QFileInfo>
+#include <QInputDialog>
 #include <QTabBar>
 
 #include "autotype/AutoType.h"
+#include "core/DeviceStorage.h"
 #include "core/Merger.h"
 #include "core/Tools.h"
 #include "format/CsvExporter.h"
@@ -158,9 +160,12 @@ void DatabaseTabWidget::addDatabaseTab(const QString& filePath,
                                        const QString& password,
                                        const QString& keyfile)
 {
-    QString cleanFilePath = QDir::toNativeSeparators(filePath);
+    // A database on a device is named by its location, not a file path:
+    // no separator conversion, no existence check on disk.
+    const bool onDevice = DeviceStorage::isDeviceLocation(filePath);
+    QString cleanFilePath = onDevice ? filePath : QDir::toNativeSeparators(filePath);
     QFileInfo fileInfo(cleanFilePath);
-    QString canonicalFilePath = fileInfo.canonicalFilePath();
+    QString canonicalFilePath = onDevice ? filePath : fileInfo.canonicalFilePath();
 
     if (canonicalFilePath.isEmpty()) {
         emit messageGlobal(tr("Failed to open %1. It either does not exist or is not accessible.").arg(cleanFilePath),
@@ -186,6 +191,55 @@ void DatabaseTabWidget::addDatabaseTab(const QString& filePath,
     addDatabaseTab(dbWidget, inBackground);
     dbWidget->performUnlockDatabase(password, keyfile);
     updateLastDatabases(dbWidget->database());
+}
+
+/**
+ * Open a database stored on a YubiKey, through yb (mock-up): pick the
+ * YubiKey, the vault, enter the PIN.  If the YubiKey also holds the vault's
+ * master password (`<vault>.passwd`), unlock with it.
+ */
+void DatabaseTabWidget::openDatabaseFromDevice()
+{
+    bool ok = false;
+    auto serial = QInputDialog::getText(this,
+                                        tr("Open from YubiKey"),
+                                        tr("YubiKey serial number (empty for the only one connected):"),
+                                        QLineEdit::Normal,
+                                        {},
+                                        &ok)
+                      .trimmed();
+    if (!ok) {
+        return;
+    }
+
+    auto* storage = DeviceStorage::instance();
+    QString error;
+    auto vaults = storage->listVaults(serial, &error);
+    if (!error.isEmpty()) {
+        emit messageGlobal(error, MessageWidget::Error);
+        return;
+    }
+    if (vaults.isEmpty()) {
+        emit messageGlobal(tr("No vault (*.kdbx) on this YubiKey."), MessageWidget::Information);
+        return;
+    }
+    auto vault = QInputDialog::getItem(this, tr("Open from YubiKey"), tr("Vault:"), vaults, 0, false, &ok);
+    if (!ok) {
+        return;
+    }
+    auto pin = QInputDialog::getText(this, tr("Open from YubiKey"), tr("YubiKey PIN:"), QLineEdit::Password, {}, &ok);
+    if (!ok) {
+        return;
+    }
+    storage->setPin(serial, pin);
+
+    auto location = DeviceStorage::location(serial, vault);
+    QString password;
+    if (!storage->readPassword(location, &password, &error)) {
+        emit messageGlobal(error, MessageWidget::Error);
+        return;
+    }
+    addDatabaseTab(location, false, password);
 }
 
 /**

@@ -56,6 +56,7 @@ public slots:
                         const QString& password = {},
                         const QString& keyfile = {});
     void addDatabaseTab(DatabaseWidget* dbWidget, bool inBackground = false);
+    void openDatabaseFromDevice();
     bool closeDatabaseTab(int index);
     bool closeDatabaseTab(DatabaseWidget* dbWidget);
     bool closeAllDatabaseTabs();
