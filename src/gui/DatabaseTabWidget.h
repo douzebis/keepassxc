@@ -56,7 +56,6 @@ public slots:
                         const QString& password = {},
                         const QString& keyfile = {});
     void addDatabaseTab(DatabaseWidget* dbWidget, bool inBackground = false);
-    void openDatabaseFromDevice();
     bool closeDatabaseTab(int index);
     bool closeDatabaseTab(DatabaseWidget* dbWidget);
     bool closeAllDatabaseTabs();
@@ -118,6 +117,9 @@ private slots:
     void updateLastDatabases();
 
 private:
+    void openDatabaseFile();
+    void openDatabaseFromOtherDevice();
+    void openDeviceVault(const QString& serial, const QString& vault);
     QSharedPointer<Database> execNewDatabaseWizard();
     void updateLastDatabases(const QSharedPointer<Database>& database);
     bool warnOnExport();

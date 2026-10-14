@@ -137,6 +137,44 @@ DatabaseWidget* DatabaseTabWidget::newDatabase()
 
 void DatabaseTabWidget::openDatabase()
 {
+    // With yb installed and a YubiKey set up for it connected (yb lists its
+    // vaults without the PIN, maybe none yet), offer the YubiKey first;
+    // otherwise, as always, the file dialog.
+    QString error;
+    const auto vaults = DeviceStorage::instance()->listVaults({}, &error);
+    const bool severalYubiKeys = error.contains("ambiguous device selection");
+    if (!error.isEmpty() && !severalYubiKeys) {
+        openDatabaseFile();
+        return;
+    }
+
+    QStringList choices;
+    for (const auto& vault : vaults) {
+        choices << tr("%1 (on the YubiKey)").arg(vault);
+    }
+    const auto otherYubiKey = tr("A vault on another YubiKey (by serial number)…");
+    const auto aFile = tr("A file…");
+    choices << otherYubiKey << aFile;
+
+    const auto label = severalYubiKeys    ? tr("Open (several YubiKeys are connected):")
+                       : vaults.isEmpty() ? tr("Open (no vault on the YubiKey yet):")
+                                          : tr("Open:");
+    bool ok = false;
+    const auto choice = QInputDialog::getItem(this, tr("Open database"), label, choices, 0, false, &ok);
+    if (!ok) {
+        return;
+    }
+    if (choice == aFile) {
+        openDatabaseFile();
+    } else if (choice == otherYubiKey) {
+        openDatabaseFromOtherDevice();
+    } else {
+        openDeviceVault({}, vaults.at(choices.indexOf(choice)));
+    }
+}
+
+void DatabaseTabWidget::openDatabaseFile()
+{
     auto filter = QString("%1 (*.kdbx);;%2 (*)").arg(tr("KeePass 2 Database"), tr("All files"));
     auto fileName = fileDialog()->getOpenFileName(this, tr("Open database"), FileDialog::getLastDir("db"), filter);
     if (!fileName.isEmpty()) {
@@ -194,48 +232,44 @@ void DatabaseTabWidget::addDatabaseTab(const QString& filePath,
 }
 
 /**
- * Open a database stored on a YubiKey, through yb (mock-up): pick the
- * YubiKey, the vault, enter the PIN.  If the YubiKey also holds the vault's
- * master password (`<vault>.passwd`), unlock with it.
+ * A vault on a YubiKey chosen by its serial number, when several are
+ * connected (mock-up).
  */
-void DatabaseTabWidget::openDatabaseFromDevice()
+void DatabaseTabWidget::openDatabaseFromOtherDevice()
 {
     bool ok = false;
-    auto serial = QInputDialog::getText(this,
-                                        tr("Open from YubiKey"),
-                                        tr("YubiKey serial number (empty for the only one connected):"),
-                                        QLineEdit::Normal,
-                                        {},
-                                        &ok)
-                      .trimmed();
-    if (!ok) {
+    const auto serial =
+        QInputDialog::getText(this, tr("Open database"), tr("YubiKey serial number:"), QLineEdit::Normal, {}, &ok)
+            .trimmed();
+    if (!ok || serial.isEmpty()) {
         return;
     }
-
-    auto* storage = DeviceStorage::instance();
     QString error;
-    auto vaults = storage->listVaults(serial, &error);
+    const auto vaults = DeviceStorage::instance()->listVaults(serial, &error);
     if (!error.isEmpty()) {
         emit messageGlobal(error, MessageWidget::Error);
         return;
     }
     if (vaults.isEmpty()) {
-        emit messageGlobal(tr("No vault (*.kdbx) on this YubiKey."), MessageWidget::Information);
+        emit messageGlobal(tr("No vault (*.kdbx) on YubiKey %1.").arg(serial), MessageWidget::Information);
         return;
     }
-    auto vault = QInputDialog::getItem(this, tr("Open from YubiKey"), tr("Vault:"), vaults, 0, false, &ok);
-    if (!ok) {
-        return;
+    const auto vault = QInputDialog::getItem(this, tr("Open database"), tr("Vault:"), vaults, 0, false, &ok);
+    if (ok) {
+        openDeviceVault(serial, vault);
     }
-    auto pin = QInputDialog::getText(this, tr("Open from YubiKey"), tr("YubiKey PIN:"), QLineEdit::Password, {}, &ok);
-    if (!ok) {
-        return;
-    }
-    storage->setPin(serial, pin);
+}
 
-    auto location = DeviceStorage::location(serial, vault);
-    QString password;
-    if (!storage->readPassword(location, &password, &error)) {
+/**
+ * Open a vault on a YubiKey, through yb (mock-up).  If the YubiKey also
+ * holds the vault's master password (`<vault>.passwd`), unlock with it;
+ * the PIN is asked when first needed.
+ */
+void DatabaseTabWidget::openDeviceVault(const QString& serial, const QString& vault)
+{
+    const auto location = DeviceStorage::location(serial, vault);
+    QString password, error;
+    if (!DeviceStorage::instance()->readPassword(location, &password, &error)) {
         emit messageGlobal(error, MessageWidget::Error);
         return;
     }

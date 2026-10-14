@@ -19,7 +19,6 @@
 #include "WelcomeWidget.h"
 #include "ui_WelcomeWidget.h"
 #include <QKeyEvent>
-#include <QPushButton>
 
 #include "config-keepassx.h"
 #include "core/Config.h"
@@ -49,14 +48,6 @@ WelcomeWidget::WelcomeWidget(QWidget* parent)
 
     connect(m_ui->buttonNewDatabase, SIGNAL(clicked()), SIGNAL(newDatabase()));
     connect(m_ui->buttonOpenDatabase, SIGNAL(clicked()), SIGNAL(openDatabase()));
-
-    // Mock-up: databases stored on a YubiKey, through yb.
-    auto* buttonOpenFromYubiKey = new QPushButton(tr("Open from YubiKey"), this);
-    buttonOpenFromYubiKey->setIcon(icons()->icon("document-open"));
-    buttonOpenFromYubiKey->setStyleSheet("text-align:center;");
-    auto* buttons = m_ui->horizontalLayout_2;
-    buttons->insertWidget(buttons->indexOf(m_ui->buttonOpenDatabase) + 1, buttonOpenFromYubiKey);
-    connect(buttonOpenFromYubiKey, &QPushButton::clicked, this, &WelcomeWidget::openDatabaseFromDevice);
     connect(m_ui->buttonImport, SIGNAL(clicked()), SIGNAL(importFile()));
     connect(m_ui->recentListWidget,
             SIGNAL(itemActivated(QListWidgetItem*)),
