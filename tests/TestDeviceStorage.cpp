@@ -35,7 +35,8 @@ namespace
 
     /// An in-memory stand-in for `yb` and its YubiKey: blobs by name, the
     /// PIN on the first line of standard input (yb spec 0037), exit status
-    /// 2 for "not found", 3 for "store full".
+    /// 2 for "not found" (`fetch`), 3 for "store full".  As the real `yb`,
+    /// `ls` matching nothing succeeds with empty output.
     struct FakeYb
     {
         QHash<QString, QByteArray> blobs;
@@ -76,7 +77,7 @@ namespace
                                                       : it.key());
                     }
                 }
-                r.exitCode = names.isEmpty() ? DeviceStorage::NotFound : 0;
+                r.exitCode = 0;
                 r.output = names.join('\n').toUtf8();
             } else if (args.value(0) == "fetch") {
                 auto name = args.last();
@@ -264,8 +265,18 @@ void TestDeviceStorage::testPinIsAskedOnceAndForgotten()
     QCOMPARE(fake->stores, 3);
 }
 
+/// A vault that is not on the YubiKey: opening fails, saying so.
+void TestDeviceStorage::testMissingVault()
+{
+    auto db = QSharedPointer<Database>::create();
+    QString error;
+    QVERIFY(!db->open(Location, key(), &error));
+    QVERIFY2(error.contains("is not on the YubiKey"), qPrintable(error));
+}
+
 /// The vault's master password, kept on the YubiKey as `<vault>.passwd`,
-/// is read without its final newline; without one, nothing is read.
+/// is read without its final newline; without one, nothing is read and
+/// nothing fails (KeePassXC then asks for the master password).
 void TestDeviceStorage::testStoredMasterPassword()
 {
     QString password, error;

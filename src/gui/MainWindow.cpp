@@ -451,7 +451,7 @@ MainWindow::MainWindow()
     connect(m_ui->actionDatabaseOpen, SIGNAL(triggered()), m_ui->tabWidget, SLOT(openDatabase()));
 
     // Mock-up: databases stored on a YubiKey, through the yb command.
-    auto* openFromYubiKey = new QAction(tr("Open from &YubiKey…"), this);
+    auto* openFromYubiKey = new QAction(icons()->icon("document-open"), tr("Open from &YubiKey…"), this);
     m_ui->menuFile->insertAction(m_ui->menuRecentDatabases->menuAction(), openFromYubiKey);
     connect(openFromYubiKey, &QAction::triggered, m_ui->tabWidget, &DatabaseTabWidget::openDatabaseFromDevice);
     DeviceStorage::instance()->setPinPrompt([this](const QString& serial) {
@@ -547,6 +547,10 @@ MainWindow::MainWindow()
 
     connect(m_ui->welcomeWidget, SIGNAL(newDatabase()), SLOT(switchToNewDatabase()));
     connect(m_ui->welcomeWidget, SIGNAL(openDatabase()), SLOT(switchToOpenDatabase()));
+    connect(m_ui->welcomeWidget, &WelcomeWidget::openDatabaseFromDevice, this, [this] {
+        m_ui->tabWidget->openDatabaseFromDevice();
+        switchToDatabases();
+    });
     connect(m_ui->welcomeWidget, SIGNAL(openDatabaseFile(QString)), SLOT(switchToDatabaseFile(QString)));
     connect(m_ui->welcomeWidget, SIGNAL(importFile()), m_ui->tabWidget, SLOT(importFile()));
 

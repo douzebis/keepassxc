@@ -156,7 +156,13 @@ QByteArray DeviceStorage::fingerprint(const QString& serial, const QString& blob
         *error = describe(result, blob);
         return {};
     }
-    return result.output.trimmed();
+    // `yb ls` lists nothing, and succeeds, when nothing matches.
+    auto line = result.output.trimmed();
+    if (line.isEmpty()) {
+        result.exitCode = NotFound;
+        *error = describe(result, blob);
+    }
+    return line;
 }
 
 bool DeviceStorage::fetch(const QString& serial, const QString& blob, QByteArray* data, QString* error)
@@ -228,9 +234,6 @@ bool DeviceStorage::write(const QString& location, const QByteArray& data, QStri
 QStringList DeviceStorage::listVaults(const QString& serial, QString* error)
 {
     auto result = run(serial, {"ls", "*.kdbx"});
-    if (result.exitCode == NotFound) {
-        return {};
-    }
     if (result.exitCode != 0) {
         *error = describe(result, "*.kdbx");
         return {};
@@ -251,8 +254,13 @@ bool DeviceStorage::readPassword(const QString& location, QString* password, QSt
         return false;
     }
     auto passwd = stem(blob) + ".passwd";
+    // No stored master password: nothing to read (`yb ls` lists nothing).
     auto listed = run(serial, {"ls", passwd});
-    if (listed.exitCode == NotFound) {
+    if (listed.exitCode != 0) {
+        *error = describe(listed, passwd);
+        return false;
+    }
+    if (listed.output.trimmed().isEmpty()) {
         password->clear();
         return true;
     }

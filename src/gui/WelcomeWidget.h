@@ -38,6 +38,7 @@ public:
 signals:
     void newDatabase();
     void openDatabase();
+    void openDatabaseFromDevice();
     void openDatabaseFile(QString);
     void importFile();
 
