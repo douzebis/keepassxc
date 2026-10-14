@@ -36,6 +36,8 @@ private slots:
     void testPinIsAskedOnceAndForgotten();
     void testHeaderReadDoesNotAskForThePin();
     void testMissingVault();
+    void testWrongPin();
+    void testListVaults();
     void testStoredMasterPassword();
 };
 

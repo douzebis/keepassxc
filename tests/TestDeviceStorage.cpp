@@ -17,7 +17,6 @@
 
 #include "TestDeviceStorage.h"
 
-#include <QRegularExpression>
 #include <QTest>
 
 #include "core/Database.h"
@@ -33,84 +32,89 @@ namespace
     const QString Pin = QStringLiteral("654321");
     const QString Location = QStringLiteral("yubikey:/Passwords.kdbx");
 
-    /// An in-memory stand-in for `yb` and its YubiKey: blobs by name, the
-    /// PIN on the first line of standard input (yb spec 0037), exit status
-    /// 2 for "not found" (`fetch`), 3 for "store full".  As the real `yb`,
-    /// `ls` matching nothing succeeds with empty output.
-    struct FakeYb
+    /// An in-memory YubiKey: blobs by name, each with a generation that
+    /// changes with every store.
+    struct FakeDevice
     {
         QHash<QString, QByteArray> blobs;
-        QHash<QString, int> versions;
-        QStringList calls;
+        QHash<QString, quint32> generations;
+        quint32 nextGeneration = 1;
         int fetches = 0;
         int stores = 0;
+        int pinTries = 3;
         bool full = false;
-
-        static bool pinOk(const QByteArray& input, QByteArray* rest)
-        {
-            auto newline = input.indexOf('\n');
-            if (newline < 0 || input.left(newline) != Pin.toUtf8()) {
-                return false;
-            }
-            *rest = input.mid(newline + 1);
-            return true;
-        }
-
-        DeviceStorage::Result run(const QStringList& arguments, const QByteArray& input)
-        {
-            calls << arguments.join(' ');
-            QStringList args = arguments;
-            args.removeAll("--quiet");
-            args.removeAll("--pin-stdin");
-            DeviceStorage::Result r;
-            QByteArray rest;
-            if (args.value(0) == "ls") {
-                QString pattern = args.last();
-                QRegularExpression re(QRegularExpression::wildcardToRegularExpression(pattern));
-                QStringList names;
-                for (auto it = blobs.constBegin(); it != blobs.constEnd(); ++it) {
-                    if (re.match(it.key()).hasMatch()) {
-                        names << (args.contains("-l") ? QString("- %1 %2 %3")
-                                                            .arg(versions.value(it.key()))
-                                                            .arg(it.value().size())
-                                                            .arg(it.key())
-                                                      : it.key());
-                    }
-                }
-                r.exitCode = 0;
-                r.output = names.join('\n').toUtf8();
-            } else if (args.value(0) == "fetch") {
-                auto name = args.last();
-                if (!pinOk(input, &rest)) {
-                    r.exitCode = 1;
-                    r.errorText = "wrong PIN";
-                } else if (!blobs.contains(name)) {
-                    r.exitCode = DeviceStorage::NotFound;
-                } else {
-                    ++fetches;
-                    r.exitCode = 0;
-                    r.output = blobs.value(name);
-                }
-            } else if (args.value(0) == "store") {
-                auto name = args.last();
-                if (!pinOk(input, &rest)) {
-                    r.exitCode = 1;
-                    r.errorText = "wrong PIN";
-                } else if (full) {
-                    r.exitCode = DeviceStorage::StoreFull;
-                    r.errorText = "store is full";
-                } else {
-                    ++stores;
-                    blobs.insert(name, rest);
-                    versions[name] += 1;
-                    r.exitCode = 0;
-                }
-            }
-            return r;
-        }
     };
 
-    FakeYb* fake = nullptr;
+    FakeDevice* fake = nullptr;
+
+    /// A stand-in for libyubiblob, following its documented contract (yb
+    /// spec 0039): listing needs no PIN; a wrong PIN is WrongPin with the
+    /// tries left; a missing blob is NotFound; a store without room is
+    /// StoreFull and writes nothing.
+    class FakeBackend : public DeviceStorage::Backend
+    {
+    public:
+        DeviceStorage::Status list(const QString&, QList<DeviceStorage::BlobInfo>* blobs, QString*) override
+        {
+            blobs->clear();
+            for (auto it = fake->blobs.constBegin(); it != fake->blobs.constEnd(); ++it) {
+                blobs->append(
+                    {it.key(), static_cast<quint32>(it.value().size()), 0, fake->generations.value(it.key()), true});
+            }
+            return DeviceStorage::Ok;
+        }
+
+        DeviceStorage::Status fetch(const QString&,
+                                    const QString& name,
+                                    const QByteArray& pin,
+                                    QByteArray* data,
+                                    QString* error,
+                                    int* pinTries) override
+        {
+            if (!pinOk(pin, error, pinTries)) {
+                return DeviceStorage::WrongPin;
+            }
+            if (!fake->blobs.contains(name)) {
+                *error = "no blob named " + name;
+                return DeviceStorage::NotFound;
+            }
+            ++fake->fetches;
+            *data = fake->blobs.value(name);
+            return DeviceStorage::Ok;
+        }
+
+        DeviceStorage::Status store(const QString&,
+                                    const QString& name,
+                                    const QByteArray& data,
+                                    const QByteArray& pin,
+                                    QString* error,
+                                    int* pinTries) override
+        {
+            if (!pinOk(pin, error, pinTries)) {
+                return DeviceStorage::WrongPin;
+            }
+            if (fake->full) {
+                *error = "not enough free objects";
+                return DeviceStorage::StoreFull;
+            }
+            ++fake->stores;
+            fake->blobs.insert(name, data);
+            fake->generations.insert(name, fake->nextGeneration++);
+            return DeviceStorage::Ok;
+        }
+
+    private:
+        static bool pinOk(const QByteArray& pin, QString* error, int* pinTries)
+        {
+            if (pin == Pin.toUtf8()) {
+                fake->pinTries = 3;
+                return true;
+            }
+            *pinTries = --fake->pinTries;
+            *error = "wrong PIN";
+            return false;
+        }
+    };
 
     QSharedPointer<CompositeKey> key()
     {
@@ -138,9 +142,9 @@ void TestDeviceStorage::initTestCase()
 void TestDeviceStorage::init()
 {
     delete fake;
-    fake = new FakeYb;
+    fake = new FakeDevice;
     auto* storage = DeviceStorage::instance();
-    storage->setRunner([](const QStringList& a, const QByteArray& i) { return fake->run(a, i); });
+    storage->setBackend(std::make_unique<FakeBackend>());
     storage->setPinPrompt([](const QString&) { return Pin; });
     storage->clearCache();
     storage->forgetPin("");
@@ -148,7 +152,7 @@ void TestDeviceStorage::init()
 
 void TestDeviceStorage::cleanupTestCase()
 {
-    DeviceStorage::instance()->setRunner({});
+    DeviceStorage::instance()->setBackend(nullptr);
     DeviceStorage::instance()->setPinPrompt({});
     delete fake;
     fake = nullptr;
@@ -178,7 +182,6 @@ void TestDeviceStorage::testSaveAndOpen()
     saveNewDatabase("on the YubiKey");
     QCOMPARE(fake->stores, 1);
     QVERIFY(fake->blobs.value("Passwords.kdbx").size() > 0);
-    QVERIFY(fake->calls.last().contains("ls -l Passwords.kdbx"));
 
     DeviceStorage::instance()->clearCache();
     auto db = QSharedPointer<Database>::create();
@@ -211,7 +214,7 @@ void TestDeviceStorage::testChangedVaultIsFetchedAgain()
     saveNewDatabase("second");
     // Elsewhere, the first version is stored back.
     fake->blobs.insert("Passwords.kdbx", stored);
-    fake->versions["Passwords.kdbx"] += 1;
+    fake->generations.insert("Passwords.kdbx", fake->nextGeneration++);
 
     auto db = QSharedPointer<Database>::create();
     QString error;
@@ -296,6 +299,35 @@ void TestDeviceStorage::testMissingVault()
     QString error;
     QVERIFY(!db->open(Location, key(), &error));
     QVERIFY2(error.contains("is not on the YubiKey"), qPrintable(error));
+}
+
+/// A wrong PIN fails with the tries left, and is forgotten: the next
+/// operation asks again.
+void TestDeviceStorage::testWrongPin()
+{
+    saveNewDatabase("pin");
+    DeviceStorage::instance()->clearCache();
+    DeviceStorage::instance()->forgetPin("");
+    QStringList answers{"000000", Pin};
+    int prompts = 0;
+    DeviceStorage::instance()->setPinPrompt([&](const QString&) { return answers.value(prompts++); });
+
+    auto db = QSharedPointer<Database>::create();
+    QString error;
+    QVERIFY(!db->open(Location, key(), &error));
+    QVERIFY2(error.contains("Wrong PIN (2 tries left)"), qPrintable(error));
+    QVERIFY2(db->open(Location, key(), &error), qPrintable(error));
+    QCOMPARE(prompts, 2);
+}
+
+/// The vault list holds the `*.kdbx` blobs only, sorted.
+void TestDeviceStorage::testListVaults()
+{
+    fake->blobs.insert("b.kdbx", "x");
+    fake->blobs.insert("a.kdbx", "x");
+    fake->blobs.insert("a.passwd", "x");
+    QString error;
+    QCOMPARE(DeviceStorage::instance()->listVaults({}, &error), QStringList({"a.kdbx", "b.kdbx"}));
 }
 
 /// The vault's master password, kept on the YubiKey as `<vault>.passwd`,

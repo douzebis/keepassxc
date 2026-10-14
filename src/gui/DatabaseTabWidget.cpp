@@ -141,8 +141,9 @@ void DatabaseTabWidget::openDatabase()
     // vaults without the PIN, maybe none yet), offer the YubiKey first;
     // otherwise, as always, the file dialog.
     QString error;
-    const auto vaults = DeviceStorage::instance()->listVaults({}, &error);
-    const bool severalYubiKeys = error.contains("ambiguous device selection");
+    DeviceStorage::Status status;
+    const auto vaults = DeviceStorage::instance()->listVaults({}, &error, &status);
+    const bool severalYubiKeys = status == DeviceStorage::SeveralDevices;
     if (!error.isEmpty() && !severalYubiKeys) {
         openDatabaseFile();
         return;
