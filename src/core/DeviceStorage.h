@@ -78,6 +78,8 @@ public:
     QStringList listVaults(const QString& serial, QString* error);
     /// The vault's stored master password (`<vault>.passwd`), if any.
     bool readPassword(const QString& location, QString* password, QString* error);
+    /// Whether the YubiKey holds the vault's master password; no PIN needed.
+    bool hasStoredPassword(const QString& location);
 
     void setPin(const QString& serial, const QString& pin);
     /// Forget the PIN of a YubiKey, overwriting it in memory.

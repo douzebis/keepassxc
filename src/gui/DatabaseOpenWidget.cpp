@@ -251,6 +251,13 @@ void DatabaseOpenWidget::load(const QString& filename)
 
     m_ui->fileNameLabel->setRawText(m_filename);
 
+    // The master password of a vault on a YubiKey may be stored there.
+    if (DeviceStorage::isDeviceLocation(m_filename) && DeviceStorage::instance()->hasStoredPassword(m_filename)) {
+        m_ui->messageWidget->showMessage(
+            tr("The master password is stored on the YubiKey: leave the password empty and click Unlock."),
+            MessageWidget::Information);
+    }
+
     // Set the public name if defined
     auto label = tr("Unlock KeePassXC Database");
     if (!m_db->publicName().isEmpty()) {

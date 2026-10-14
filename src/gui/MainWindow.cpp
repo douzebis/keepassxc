@@ -692,8 +692,10 @@ void MainWindow::restoreConfigState()
                 openDatabase(filename);
             }
         }
+        // A database on a YubiKey is not reopened at start-up: it is opened
+        // through Open Database, which uses its stored master password.
         auto lastActiveFile = config()->get(Config::LastActiveDatabase).toString();
-        if (!lastActiveFile.isEmpty()) {
+        if (!lastActiveFile.isEmpty() && !DeviceStorage::isDeviceLocation(lastActiveFile)) {
             openDatabase(lastActiveFile);
         }
     }

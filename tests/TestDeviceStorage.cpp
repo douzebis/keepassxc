@@ -307,7 +307,10 @@ void TestDeviceStorage::testStoredMasterPassword()
     QVERIFY(DeviceStorage::instance()->readPassword(Location, &password, &error));
     QVERIFY(password.isEmpty());
 
+    QVERIFY(!DeviceStorage::instance()->hasStoredPassword(Location));
+
     fake->blobs.insert("Passwords.passwd", "correct horse\n");
+    QVERIFY(DeviceStorage::instance()->hasStoredPassword(Location));
     QVERIFY(DeviceStorage::instance()->readPassword(Location, &password, &error));
     QCOMPARE(password, QString("correct horse"));
 }

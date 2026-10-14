@@ -281,6 +281,16 @@ bool DeviceStorage::readPassword(const QString& location, QString* password, QSt
     return true;
 }
 
+bool DeviceStorage::hasStoredPassword(const QString& location)
+{
+    QString serial, blob;
+    if (!parse(location, &serial, &blob)) {
+        return false;
+    }
+    auto listed = run(serial, {"ls", stem(blob) + ".passwd"});
+    return listed.exitCode == 0 && !listed.output.trimmed().isEmpty();
+}
+
 void DeviceStorage::setPin(const QString& serial, const QString& pin)
 {
     forgetPin(serial);
