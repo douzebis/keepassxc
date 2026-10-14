@@ -34,6 +34,7 @@ private slots:
     void testChangedVaultIsFetchedAgain();
     void testStoreFullKeepsTheDatabaseModified();
     void testPinIsAskedOnceAndForgotten();
+    void testHeaderReadDoesNotAskForThePin();
     void testMissingVault();
     void testStoredMasterPassword();
 };

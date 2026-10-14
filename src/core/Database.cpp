@@ -147,7 +147,8 @@ bool Database::open(const QString& filePath, QSharedPointer<const CompositeKey> 
     QIODevice& dbFile = onDevice ? static_cast<QIODevice&>(deviceBuffer) : file;
     if (onDevice) {
         QString deviceError;
-        if (!DeviceStorage::instance()->read(filePath, &deviceData, &deviceError)) {
+        // Reading only the public headers (no key) never asks for the PIN.
+        if (!DeviceStorage::instance()->read(filePath, &deviceData, &deviceError, !key.isNull())) {
             if (error) {
                 *error = deviceError;
             }

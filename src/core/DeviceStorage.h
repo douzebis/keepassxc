@@ -67,8 +67,10 @@ public:
     static bool parse(const QString& location, QString* serial, QString* blob);
 
     /// The vault's bytes: from the cache if the device still holds them,
-    /// otherwise fetched (with the PIN).
-    bool read(const QString& location, QByteArray* data, QString* error);
+    /// otherwise fetched (with the PIN).  With `mayAskPin` false (KeePassXC
+    /// reading only the public headers, e.g. restoring tabs at start-up),
+    /// nothing is fetched unless the PIN is already known.
+    bool read(const QString& location, QByteArray* data, QString* error, bool mayAskPin = true);
     /// Store `data` on the device (with the PIN); updates the cache.
     bool write(const QString& location, const QByteArray& data, QString* error);
 

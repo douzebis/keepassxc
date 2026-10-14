@@ -265,6 +265,30 @@ void TestDeviceStorage::testPinIsAskedOnceAndForgotten()
     QCOMPARE(fake->stores, 3);
 }
 
+/// Reading only the public headers (no key: KeePassXC restoring tabs at
+/// start-up) never asks for the PIN; unlocking does.
+void TestDeviceStorage::testHeaderReadDoesNotAskForThePin()
+{
+    saveNewDatabase("restored");
+    DeviceStorage::instance()->clearCache();
+    DeviceStorage::instance()->forgetPin("");
+    int prompts = 0;
+    DeviceStorage::instance()->setPinPrompt([&prompts](const QString&) {
+        ++prompts;
+        return Pin;
+    });
+
+    auto headers = QSharedPointer<Database>::create();
+    QString error;
+    QVERIFY(!headers->open(Location, nullptr, &error));
+    QCOMPARE(prompts, 0);
+    QCOMPARE(fake->fetches, 0);
+
+    auto db = QSharedPointer<Database>::create();
+    QVERIFY2(db->open(Location, key(), &error), qPrintable(error));
+    QCOMPARE(prompts, 1);
+}
+
 /// A vault that is not on the YubiKey: opening fails, saying so.
 void TestDeviceStorage::testMissingVault()
 {

@@ -183,7 +183,7 @@ bool DeviceStorage::fetch(const QString& serial, const QString& blob, QByteArray
     return true;
 }
 
-bool DeviceStorage::read(const QString& location, QByteArray* data, QString* error)
+bool DeviceStorage::read(const QString& location, QByteArray* data, QString* error, bool mayAskPin)
 {
     QString serial, blob;
     if (!parse(location, &serial, &blob)) {
@@ -198,6 +198,10 @@ bool DeviceStorage::read(const QString& location, QByteArray* data, QString* err
     if (cached != m_cache.constEnd() && cached->fingerprint == current) {
         *data = cached->data;
         return true;
+    }
+    if (!mayAskPin && !m_pins.contains(serial)) {
+        *error = tr("%1 is read from the YubiKey when unlocking.").arg(blob);
+        return false;
     }
     if (!fetch(serial, blob, data, error)) {
         return false;
