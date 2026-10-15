@@ -108,6 +108,10 @@ public:
     static QString location(const QString& serial, const QString& blob);
     /// Splits a location into the YubiKey's serial and the blob name.
     static bool parse(const QString& location, QString* serial, QString* blob);
+    /// The vault name for a name the user typed: trimmed, with `.kdbx`
+    /// appended if missing; empty if it cannot name a blob (empty, a `/`
+    /// or a null character, more than 255 bytes in UTF-8).
+    static QString vaultName(const QString& input);
 
     /// The vault's bytes: from the cache if the device still holds them,
     /// otherwise fetched (with the PIN).  With `mayAskPin` false (KeePassXC

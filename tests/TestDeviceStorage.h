@@ -29,6 +29,7 @@ private slots:
     void init();
     void cleanupTestCase();
     void testLocations();
+    void testVaultName();
     void testSaveAndOpen();
     void testOpenUsesTheCache();
     void testChangedVaultIsFetchedAgain();

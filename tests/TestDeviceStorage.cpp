@@ -175,6 +175,25 @@ void TestDeviceStorage::testLocations()
     QCOMPARE(db.canonicalFilePath(), Location);
 }
 
+/// The name typed when saving a database on the YubiKey.
+void TestDeviceStorage::testVaultName()
+{
+    QCOMPARE(DeviceStorage::vaultName("Travel"), QString("Travel.kdbx"));
+    QCOMPARE(DeviceStorage::vaultName("  Travel.kdbx "), QString("Travel.kdbx"));
+    QCOMPARE(DeviceStorage::vaultName("Mes mots de passe"), QString("Mes mots de passe.kdbx"));
+    QVERIFY(DeviceStorage::vaultName("").isEmpty());
+    QVERIFY(DeviceStorage::vaultName("  ").isEmpty());
+    QVERIFY(DeviceStorage::vaultName(".kdbx").isEmpty());
+    QVERIFY(DeviceStorage::vaultName("a/b").isEmpty());
+    QVERIFY(DeviceStorage::vaultName(QString("a") + QChar(0) + "b").isEmpty());
+    // yb's limit: 255 bytes in UTF-8, ".kdbx" included.
+    QCOMPARE(DeviceStorage::vaultName(QString(250, 'x')).size(), 255);
+    QVERIFY(DeviceStorage::vaultName(QString(251, 'x')).isEmpty());
+    // "é" is 2 bytes: 125 of them + ".kdbx" is 255 bytes, 126 is 257.
+    QCOMPARE(DeviceStorage::vaultName(QString(125, QChar(0xe9))).size(), 130);
+    QVERIFY(DeviceStorage::vaultName(QString(126, QChar(0xe9))).isEmpty());
+}
+
 /// A database saved to the device and opened from it: the bytes go through
 /// `yb store` and `yb fetch -p`, with the PIN on standard input.
 void TestDeviceStorage::testSaveAndOpen()
