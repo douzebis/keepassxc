@@ -2623,7 +2623,8 @@ bool DatabaseWidget::saveAs()
     bool ok = false;
     if (!newFilePath.isEmpty()) {
         QString errorMessage;
-        if (!performSave(errorMessage, newFilePath)) {
+        ok = performSave(errorMessage, newFilePath);
+        if (!ok) {
             showMessage(tr("Writing the database failed: %1").arg(errorMessage),
                         MessageWidget::Error,
                         true,
