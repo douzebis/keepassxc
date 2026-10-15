@@ -138,8 +138,8 @@ DatabaseWidget* DatabaseTabWidget::newDatabase()
 void DatabaseTabWidget::openDatabase()
 {
     // With yb installed and a YubiKey set up for it connected (yb lists its
-    // vaults without the PIN, maybe none yet), offer the YubiKey first;
-    // otherwise, as always, the file dialog.
+    // vaults without the PIN, maybe none yet), offer the YubiKey after a
+    // file; otherwise, as always, the file dialog.
     QString error;
     DeviceStorage::Status status;
     const auto vaults = DeviceStorage::instance()->listVaults({}, &error, &status);
@@ -149,13 +149,18 @@ void DatabaseTabWidget::openDatabase()
         return;
     }
 
-    QStringList choices;
+    QStringList vaultChoices;
     for (const auto& vault : vaults) {
-        choices << tr("%1 (on the YubiKey)").arg(vault);
+        vaultChoices << tr("%1 (on the YubiKey)").arg(vault);
     }
-    const auto otherYubiKey = tr("A vault on another YubiKey (by serial number)…");
     const auto aFile = tr("A file…");
-    choices << otherYubiKey << aFile;
+    const auto otherYubiKey = tr("A vault on another YubiKey (by serial number)…");
+    // The serial number only matters to choose among several YubiKeys (no
+    // vault is listed then).
+    auto choices = QStringList{aFile} + vaultChoices;
+    if (severalYubiKeys) {
+        choices << otherYubiKey;
+    }
 
     const auto label = severalYubiKeys    ? tr("Open (several YubiKeys are connected):")
                        : vaults.isEmpty() ? tr("Open (no vault on the YubiKey yet):")
@@ -170,7 +175,7 @@ void DatabaseTabWidget::openDatabase()
     } else if (choice == otherYubiKey) {
         openDatabaseFromOtherDevice();
     } else {
-        openDeviceVault({}, vaults.at(choices.indexOf(choice)));
+        openDeviceVault({}, vaults.at(vaultChoices.indexOf(choice)));
     }
 }
 
