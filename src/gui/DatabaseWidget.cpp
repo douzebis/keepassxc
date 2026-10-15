@@ -2657,14 +2657,16 @@ bool DatabaseWidget::chooseSaveLocation(QString* location)
         return true;
     }
 
+    const auto aFile = tr("A file…");
     const auto onYubiKey = tr("On the YubiKey…");
     const auto otherYubiKey = tr("On a YubiKey chosen by serial number…");
-    const auto aFile = tr("A file…");
-    QStringList choices;
-    if (!severalYubiKeys) {
+    // The serial number only matters to choose among several YubiKeys.
+    QStringList choices{aFile};
+    if (severalYubiKeys) {
+        choices << otherYubiKey;
+    } else {
         choices << onYubiKey;
     }
-    choices << otherYubiKey << aFile;
     bool ok = false;
     const auto choice =
         QInputDialog::getItem(this,
