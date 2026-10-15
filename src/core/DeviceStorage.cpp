@@ -248,6 +248,19 @@ bool DeviceStorage::parse(const QString& location, QString* serial, QString* blo
     return true;
 }
 
+QString DeviceStorage::vaultName(const QString& input)
+{
+    auto name = input.trimmed();
+    if (name.isEmpty() || name == ".kdbx" || name.contains('/') || name.contains(QChar(0))) {
+        return {};
+    }
+    if (!name.endsWith(".kdbx")) {
+        name += ".kdbx";
+    }
+    // yb's limit on blob names.
+    return name.toUtf8().size() <= 255 ? name : QString();
+}
+
 QString DeviceStorage::describe(Status status, const QString& detail, const QString& blob, int pinTries) const
 {
     switch (status) {
