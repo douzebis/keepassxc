@@ -41,13 +41,52 @@ namespace
         return blob.endsWith(".kdbx") ? blob.chopped(5) : blob;
     }
 
+    /// The PIN that protects a store of this kind, as the user knows it.
+    QString pinName(DeviceStorage::StoreKind kind)
+    {
+        return kind == DeviceStorage::StoreKind::PostQuantum ? tr("FIDO2 PIN") : tr("PIV PIN");
+    }
+
+    /// A KDBX file older than version 4: its content has no HMAC, so its own
+    /// integrity check is weaker (KDBX 3.1: AES-CBC, header hash, stream
+    /// start bytes).
+    bool isBeforeKdbx4(const QByteArray& data)
+    {
+        // Two 4-byte signatures, then the version: minor (2 bytes), major
+        // (2 bytes), little-endian.
+        if (data.size() < 12) {
+            return false;
+        }
+        const auto major = static_cast<quint8>(data[10]) | (static_cast<quint8>(data[11]) << 8);
+        return major < 4;
+    }
+
+    /// The statuses of a post-quantum store whose FIDO2 side cannot be used
+    /// now: a read without its check is then possible (yb spec 0044).
+    bool isLocked(DeviceStorage::Status status)
+    {
+        switch (status) {
+        case DeviceStorage::PinBlocked:
+        case DeviceStorage::Replug:
+        case DeviceStorage::FewPinAttempts:
+        case DeviceStorage::NoCredential:
+        case DeviceStorage::NoFido2Access:
+            return true;
+        default:
+            return false;
+        }
+    }
+
 #ifdef KPXC_FEATURE_YUBIBLOB
     static_assert(DeviceStorage::Ok == YUBIBLOB_OK && DeviceStorage::NotFound == YUBIBLOB_ERR_NOT_FOUND
                       && DeviceStorage::StoreFull == YUBIBLOB_ERR_STORE_FULL
                       && DeviceStorage::CardFull == YUBIBLOB_ERR_CARD_FULL
                       && DeviceStorage::WrongPin == YUBIBLOB_ERR_WRONG_PIN
                       && DeviceStorage::SeveralDevices == YUBIBLOB_ERR_SEVERAL_DEVICES
-                      && DeviceStorage::Internal == YUBIBLOB_ERR_INTERNAL,
+                      && DeviceStorage::Internal == YUBIBLOB_ERR_INTERNAL
+                      && DeviceStorage::Tampered == YUBIBLOB_ERR_TAMPERED
+                      && DeviceStorage::NoFido2Access == YUBIBLOB_ERR_NO_FIDO2_ACCESS
+                      && DeviceStorage::Encrypted == YUBIBLOB_ERR_ENCRYPTED,
                   "DeviceStorage::Status mirrors libyubiblob's status codes");
 
     /// The device side on libyubiblob: one session per operation, so that a
@@ -84,6 +123,22 @@ namespace
             return DeviceStorage::Ok;
         }
 
+        DeviceStorage::Status storeKind(const QString& serial, DeviceStorage::StoreKind* kind, QString* error) override
+        {
+            Session s;
+            auto status = open(serial, &s, error);
+            if (status != DeviceStorage::Ok) {
+                return status;
+            }
+            yubiblob_store_info_t info{};
+            status = check(yubiblob_store_info(s.handle, &info), error);
+            if (status == DeviceStorage::Ok) {
+                *kind = info.kind == YUBIBLOB_KIND_POST_QUANTUM ? DeviceStorage::StoreKind::PostQuantum
+                                                                : DeviceStorage::StoreKind::Legacy;
+            }
+            return status;
+        }
+
         DeviceStorage::Status fetch(const QString& serial,
                                     const QString& name,
                                     const QByteArray& pin,
@@ -114,9 +169,30 @@ namespace
             return status;
         }
 
+        DeviceStorage::Status
+        fetchUnencrypted(const QString& serial, const QString& name, QByteArray* data, QString* error) override
+        {
+            Session s;
+            auto status = open(serial, &s, error);
+            if (status != DeviceStorage::Ok) {
+                return status;
+            }
+            uint8_t* content = nullptr;
+            size_t len = 0;
+            yubiblob_signature_t verdict{};
+            const auto blob = name.toUtf8();
+            status = check(yubiblob_fetch_unencrypted(s.handle, blob.constData(), &content, &len, &verdict), error);
+            if (status == DeviceStorage::Ok) {
+                *data = QByteArray(reinterpret_cast<const char*>(content), static_cast<qsizetype>(len));
+                yubiblob_buffer_free(content, len);
+            }
+            return status;
+        }
+
         DeviceStorage::Status store(const QString& serial,
                                     const QString& name,
                                     const QByteArray& data,
+                                    bool encrypt,
                                     const QByteArray& pin,
                                     QString* error,
                                     int* pinTries) override
@@ -127,15 +203,33 @@ namespace
                 return status;
             }
             const auto blob = name.toUtf8();
-            // A vault is already compressed and encrypted by KeePassXC;
-            // yb encrypts it again, to the YubiKey's key.
             return check(yubiblob_store(s.handle,
                                         blob.constData(),
                                         reinterpret_cast<const uint8_t*>(data.constData()),
                                         static_cast<size_t>(data.size()),
-                                        YUBIBLOB_STORE_ENCRYPT,
+                                        encrypt ? YUBIBLOB_STORE_ENCRYPT : 0,
                                         reinterpret_cast<const uint8_t*>(pin.constData()),
                                         static_cast<size_t>(pin.size())),
+                         error,
+                         pinTries);
+        }
+
+        DeviceStorage::Status remove(const QString& serial,
+                                     const QString& name,
+                                     const QByteArray& pin,
+                                     QString* error,
+                                     int* pinTries) override
+        {
+            Session s;
+            auto status = open(serial, &s, error);
+            if (status != DeviceStorage::Ok) {
+                return status;
+            }
+            const auto blob = name.toUtf8();
+            return check(yubiblob_remove(s.handle,
+                                         blob.constData(),
+                                         reinterpret_cast<const uint8_t*>(pin.constData()),
+                                         static_cast<size_t>(pin.size())),
                          error,
                          pinTries);
         }
@@ -150,14 +244,26 @@ namespace
             }
         };
 
-        DeviceStorage::Status open(const QString& serial, Session* s, QString* error) const
+        static void touched(void* user)
+        {
+            auto* self = static_cast<YubiblobBackend*>(user);
+            if (self->touchNotice) {
+                self->touchNotice();
+            }
+        }
+
+        DeviceStorage::Status open(const QString& serial, Session* s, QString* error)
         {
             if (!m_compatible) {
-                *error = tr("This libyubiblob (%1) is not the version KeePassXC was built with.")
+                *error = tr("This libyubiblob (%1) is not the version KeePassYB was built with.")
                              .arg(QString::fromUtf8(yubiblob_version()));
                 return DeviceStorage::NotAvailable;
             }
-            return check(yubiblob_open(serial.toUInt(), 0, &s->handle), error);
+            auto status = check(yubiblob_open(serial.toUInt(), 0, &s->handle), error);
+            if (status == DeviceStorage::Ok) {
+                yubiblob_set_touch_callback(s->handle, &YubiblobBackend::touched, this);
+            }
+            return status;
         }
 
         static DeviceStorage::Status check(yubiblob_status_t status, QString* error, int* pinTries = nullptr)
@@ -182,13 +288,25 @@ namespace
         {
             return unavailable(error);
         }
+        DeviceStorage::Status storeKind(const QString&, DeviceStorage::StoreKind*, QString* error) override
+        {
+            return unavailable(error);
+        }
         DeviceStorage::Status
         fetch(const QString&, const QString&, const QByteArray&, QByteArray*, QString* error, int*) override
         {
             return unavailable(error);
         }
+        DeviceStorage::Status fetchUnencrypted(const QString&, const QString&, QByteArray*, QString* error) override
+        {
+            return unavailable(error);
+        }
         DeviceStorage::Status
-        store(const QString&, const QString&, const QByteArray&, const QByteArray&, QString* error, int*) override
+        store(const QString&, const QString&, const QByteArray&, bool, const QByteArray&, QString* error, int*) override
+        {
+            return unavailable(error);
+        }
+        DeviceStorage::Status remove(const QString&, const QString&, const QByteArray&, QString* error, int*) override
         {
             return unavailable(error);
         }
@@ -196,7 +314,7 @@ namespace
     private:
         static DeviceStorage::Status unavailable(QString* error)
         {
-            *error = tr("This KeePassXC was built without YubiKey storage (libyubiblob).");
+            *error = tr("This KeePassYB was built without YubiKey storage (libyubiblob).");
             return DeviceStorage::NotAvailable;
         }
     };
@@ -213,8 +331,8 @@ namespace
 } // namespace
 
 DeviceStorage::DeviceStorage()
-    : m_backend(defaultBackend())
 {
+    setBackend(nullptr);
 }
 
 DeviceStorage* DeviceStorage::instance()
@@ -261,8 +379,10 @@ QString DeviceStorage::vaultName(const QString& input)
     return name.toUtf8().size() <= 255 ? name : QString();
 }
 
-QString DeviceStorage::describe(Status status, const QString& detail, const QString& blob, int pinTries) const
+QString
+DeviceStorage::describe(Status status, const QString& detail, const QString& blob, int pinTries, StoreKind kind) const
 {
+    const auto pq = kind == StoreKind::PostQuantum;
     switch (status) {
     case NotFound:
         return tr("%1 is not on the YubiKey.").arg(blob);
@@ -273,8 +393,15 @@ QString DeviceStorage::describe(Status status, const QString& detail, const QStr
                   "the YubiKey, then save again.")
             .arg(blob);
     case WrongPin:
+        if (pq) {
+            return pinTries >= 0 ? tr("Wrong FIDO2 PIN (%1 tries left).").arg(pinTries) : tr("Wrong FIDO2 PIN.");
+        }
         return pinTries >= 0 ? tr("Wrong PIN (%1 tries left).").arg(pinTries) : tr("Wrong PIN.");
     case PinBlocked:
+        if (pq) {
+            return tr("The YubiKey's FIDO2 PIN is blocked: only a FIDO2 reset clears it, and it destroys the "
+                      "YubiKey's encrypted blobs.");
+        }
         return tr("The YubiKey's PIN is blocked; unblock it with the PUK (e.g. ykman piv access unblock-pin).");
     case NoDevice:
         return tr("No YubiKey found.");
@@ -284,32 +411,64 @@ QString DeviceStorage::describe(Status status, const QString& detail, const QStr
         return tr("This YubiKey is not set up for yb (yb format).");
     case Corrupted:
         return tr("%1 on the YubiKey is corrupted or was tampered with: it was not read.").arg(blob);
+    case Tampered:
+        return tr("%1 failed the YubiKey's integrity check (its seal, or the management key: the YubiKey's PIV "
+                  "application may have been reset): nothing was read or written.")
+            .arg(blob);
+    case NoTouch:
+        return tr("The YubiKey was not touched in time.");
+    case FewPinAttempts:
+        return tr("Only 3 FIDO2 PIN attempts or fewer are left: KeePassYB does not try the PIN, as a blocked "
+                  "FIDO2 PIN cannot be unblocked.");
+    case Replug:
+        return tr("Three wrong FIDO2 PINs in a row: unplug the YubiKey and plug it back in.");
+    case NoCredential:
+        return tr("The YubiKey's FIDO2 application was reset: the store's credential is gone.");
+    case NoFido2Access:
+        return tr("The YubiKey's FIDO2 side cannot be reached (FIDO application disabled, or no access to the "
+                  "device).");
     default:
         return detail;
     }
 }
 
-bool DeviceStorage::pinFor(const QString& serial, QByteArray* pin, QString* error)
+void DeviceStorage::onGuiThread(const std::function<void()>& f) const
+{
+    // Saves run on a worker thread; prompts are GUI, so they run on the GUI
+    // thread (which runs an event loop while it waits).
+    auto* app = QCoreApplication::instance();
+    if (app && QThread::currentThread() != app->thread()) {
+        QMetaObject::invokeMethod(app, f, Qt::BlockingQueuedConnection);
+    } else {
+        f();
+    }
+}
+
+bool DeviceStorage::pinFor(const QString& serial, StoreKind kind, QByteArray* pin, QString* error)
 {
     if (!m_pins.contains(serial)) {
         QString entered;
         if (m_pinPrompt) {
-            // Saves run on a worker thread; the prompt is GUI, so it runs on
-            // the GUI thread (which runs an event loop while it waits).
-            auto* app = QCoreApplication::instance();
-            if (app && QThread::currentThread() != app->thread()) {
-                QMetaObject::invokeMethod(app, [&] { entered = m_pinPrompt(serial); }, Qt::BlockingQueuedConnection);
-            } else {
-                entered = m_pinPrompt(serial);
-            }
+            onGuiThread([&] { entered = m_pinPrompt(serial, kind); });
         }
         if (entered.isNull()) {
-            *error = tr("The YubiKey's PIN is needed.");
+            *error = tr("The YubiKey's %1 is needed.").arg(pinName(kind));
             return false;
         }
         setPin(serial, entered);
     }
     *pin = m_pins.value(serial);
+    return true;
+}
+
+bool DeviceStorage::kindOf(const QString& serial, StoreKind* kind, QString* error)
+{
+    QString detail;
+    auto status = m_backend->storeKind(serial, kind, &detail);
+    if (status != Ok) {
+        *error = describe(status, detail, {}, -1, StoreKind::Legacy);
+        return false;
+    }
     return true;
 }
 
@@ -319,7 +478,7 @@ bool DeviceStorage::find(const QString& serial, const QString& blob, BlobInfo* i
     QString detail;
     *status = m_backend->list(serial, &blobs, &detail);
     if (*status != Ok) {
-        *error = describe(*status, detail, blob, -1);
+        *error = describe(*status, detail, blob, -1, StoreKind::Legacy);
         return false;
     }
     for (const auto& b : blobs) {
@@ -329,37 +488,59 @@ bool DeviceStorage::find(const QString& serial, const QString& blob, BlobInfo* i
         }
     }
     *status = NotFound;
-    *error = describe(NotFound, {}, blob, -1);
+    *error = describe(NotFound, {}, blob, -1, StoreKind::Legacy);
     return false;
 }
 
-QByteArray DeviceStorage::fingerprint(const QString& serial, const QString& blob, QString* error)
-{
-    BlobInfo info;
-    Status status;
-    if (!find(serial, blob, &info, &status, error)) {
-        return {};
-    }
-    return QByteArray::number(info.generation) + ":" + QByteArray::number(info.size);
-}
-
-bool DeviceStorage::fetch(const QString& serial, const QString& blob, QByteArray* data, QString* error)
+bool DeviceStorage::fetch(const QString& serial,
+                          const QString& blob,
+                          StoreKind kind,
+                          QByteArray* data,
+                          QString* error,
+                          Status* status)
 {
     QByteArray pin;
-    if (!pinFor(serial, &pin, error)) {
+    if (!pinFor(serial, kind, &pin, error)) {
+        *status = Internal;
         return false;
     }
     QString detail;
     int tries = -1;
-    auto status = m_backend->fetch(serial, blob, pin, data, &detail, &tries);
+    *status = m_backend->fetch(serial, blob, pin, data, &detail, &tries);
     pin.fill('\0');
-    if (status != Ok) {
-        if (status == WrongPin || status == PinBlocked) {
+    if (*status != Ok) {
+        if (*status == WrongPin || *status == PinBlocked || *status == Replug || *status == FewPinAttempts) {
             forgetPin(serial);
         }
-        *error = describe(status, detail, blob, tries);
+        *error = describe(*status, detail, blob, tries, kind);
         return false;
     }
+    return true;
+}
+
+bool DeviceStorage::readUnverified(const QString& serial,
+                                   const QString& blob,
+                                   const QString& reason,
+                                   QByteArray* data,
+                                   QString* error)
+{
+    QByteArray bytes;
+    QString detail;
+    auto status = m_backend->fetchUnencrypted(serial, blob, &bytes, &detail);
+    if (status != Ok) {
+        *error = describe(status, detail, blob, -1, StoreKind::PostQuantum);
+        return false;
+    }
+    bool agreed = false;
+    if (m_unverifiedReadPrompt) {
+        onGuiThread([&] { agreed = m_unverifiedReadPrompt(blob, reason, isBeforeKdbx4(bytes)); });
+    }
+    if (!agreed) {
+        bytes.fill('\0');
+        *error = reason;
+        return false;
+    }
+    *data = bytes;
     return true;
 }
 
@@ -370,21 +551,49 @@ bool DeviceStorage::read(const QString& location, QByteArray* data, QString* err
         *error = tr("Not a device location: %1").arg(location);
         return false;
     }
-    auto current = fingerprint(serial, blob, error);
-    if (current.isEmpty()) {
+    BlobInfo info;
+    Status status;
+    if (!find(serial, blob, &info, &status, error)) {
         return false;
     }
+    const auto current = QByteArray::number(info.generation) + ":" + QByteArray::number(info.size);
     auto cached = m_cache.constFind(location);
     if (cached != m_cache.constEnd() && cached->fingerprint == current) {
         *data = cached->data;
         return true;
     }
+    StoreKind kind;
+    if (!kindOf(serial, &kind, error)) {
+        return false;
+    }
+
+    // An unencrypted vault of a legacy store needs no PIN: its signature is
+    // checked without it.
+    if (!info.encrypted && kind == StoreKind::Legacy) {
+        QString detail;
+        status = m_backend->fetchUnencrypted(serial, blob, data, &detail);
+        if (status != Ok) {
+            *error = describe(status, detail, blob, -1, kind);
+            return false;
+        }
+        m_cache.insert(location, {*data, current});
+        return true;
+    }
+
     if (!mayAskPin && !m_pins.contains(serial)) {
         *error = tr("%1 is read from the YubiKey when unlocking.").arg(blob);
         return false;
     }
-    if (!fetch(serial, blob, data, error)) {
-        return false;
+    if (!fetch(serial, blob, kind, data, error, &status)) {
+        // A locked YubiKey: an unencrypted vault of a post-quantum store can
+        // still be read, with its checksum only, if the user agrees.
+        if (!(kind == StoreKind::PostQuantum && !info.encrypted && isLocked(status))) {
+            return false;
+        }
+        const auto reason = *error;
+        if (!readUnverified(serial, blob, reason, data, error)) {
+            return false;
+        }
     }
     m_cache.insert(location, {*data, current});
     return true;
@@ -397,23 +606,46 @@ bool DeviceStorage::write(const QString& location, const QByteArray& data, QStri
         *error = tr("Not a device location: %1").arg(location);
         return false;
     }
+    StoreKind kind;
+    if (!kindOf(serial, &kind, error)) {
+        return false;
+    }
+    // A vault stored encrypted by an older version is rewritten unencrypted.
+    BlobInfo previous;
+    Status status;
+    QString ignored;
+    const bool wasEncrypted = find(serial, blob, &previous, &status, &ignored) && previous.encrypted;
+
     QByteArray pin;
-    if (!pinFor(serial, &pin, error)) {
+    if (!pinFor(serial, kind, &pin, error)) {
         return false;
     }
     QString detail;
     int tries = -1;
-    auto status = m_backend->store(serial, blob, data, pin, &detail, &tries);
+    // Unencrypted: the vault is encrypted by its master key, and a locked
+    // YubiKey must not lock the user out of it.
+    status = m_backend->store(serial, blob, data, false, pin, &detail, &tries);
     pin.fill('\0');
     if (status != Ok) {
-        if (status == WrongPin || status == PinBlocked) {
+        if (status == WrongPin || status == PinBlocked || status == Replug || status == FewPinAttempts) {
             forgetPin(serial);
         }
-        *error = describe(status, detail, blob, tries);
+        *error = describe(status, detail, blob, tries, kind);
         return false;
     }
-    QString ignored;
-    m_cache.insert(location, {data, fingerprint(serial, blob, &ignored)});
+    BlobInfo info;
+    const auto fingerprint = find(serial, blob, &info, &status, &ignored)
+                                 ? QByteArray::number(info.generation) + ":" + QByteArray::number(info.size)
+                                 : QByteArray();
+    m_cache.insert(location, {data, fingerprint});
+    if (wasEncrypted && !m_toldUnencrypted.contains(location) && m_notice) {
+        m_toldUnencrypted.insert(location);
+        const auto message =
+            tr("%1 is now stored unencrypted on the YubiKey: it stays encrypted by its master password, and a "
+               "locked YubiKey can no longer lock you out of it.")
+                .arg(blob);
+        onGuiThread([&] { m_notice(message); });
+    }
     return true;
 }
 
@@ -426,7 +658,7 @@ QStringList DeviceStorage::listVaults(const QString& serial, QString* error, Sta
         *status = result;
     }
     if (result != Ok) {
-        *error = describe(result, detail, {}, -1);
+        *error = describe(result, detail, {}, -1, StoreKind::Legacy);
         return {};
     }
     QStringList vaults;
@@ -439,12 +671,51 @@ QStringList DeviceStorage::listVaults(const QString& serial, QString* error, Sta
     return vaults;
 }
 
+bool DeviceStorage::passwordUsable(const QString& serial, const BlobInfo& passwd, QString* reason)
+{
+#ifdef Q_OS_WIN
+    Q_UNUSED(serial)
+    Q_UNUSED(passwd)
+    *reason = tr("post-quantum stores are not supported on Windows yet");
+    return false;
+#else
+    StoreKind kind;
+    QString error;
+    if (!kindOf(serial, &kind, &error)) {
+        *reason = error;
+        return false;
+    }
+    if (!passwd.encrypted) {
+        *reason = tr("it is stored unencrypted: anyone holding the YubiKey can read it");
+        return false;
+    }
+    if (kind != StoreKind::PostQuantum) {
+        *reason = tr("it is in a legacy store, encrypted with classical cryptography");
+        return false;
+    }
+    return true;
+#endif
+}
+
 bool DeviceStorage::hasStoredPassword(const QString& location)
 {
-    QString serial, blob, error;
+    QString serial, blob, error, reason;
     BlobInfo info;
     Status status;
-    return parse(location, &serial, &blob) && find(serial, stem(blob) + ".passwd", &info, &status, &error);
+    return parse(location, &serial, &blob) && find(serial, stem(blob) + ".passwd", &info, &status, &error)
+           && passwordUsable(serial, info, &reason);
+}
+
+QString DeviceStorage::ignoredPasswordReason(const QString& location)
+{
+    QString serial, blob, error, reason;
+    BlobInfo info;
+    Status status;
+    if (!parse(location, &serial, &blob) || !find(serial, stem(blob) + ".passwd", &info, &status, &error)
+        || passwordUsable(serial, info, &reason)) {
+        return {};
+    }
+    return tr("%1 on this YubiKey is not used: %2.").arg(stem(blob) + ".passwd", reason);
 }
 
 bool DeviceStorage::readPassword(const QString& location, QString* password, QString* error)
@@ -454,6 +725,7 @@ bool DeviceStorage::readPassword(const QString& location, QString* password, QSt
         *error = tr("Not a device location: %1").arg(location);
         return false;
     }
+    password->clear();
     const auto passwd = stem(blob) + ".passwd";
     BlobInfo info;
     Status status;
@@ -461,13 +733,17 @@ bool DeviceStorage::readPassword(const QString& location, QString* password, QSt
         if (status == NotFound) {
             // No stored master password: nothing to read.
             error->clear();
-            password->clear();
             return true;
         }
         return false;
     }
+    QString reason;
+    if (!passwordUsable(serial, info, &reason)) {
+        // Not safe to use: KeePassYB asks for the master password.
+        return true;
+    }
     QByteArray bytes;
-    if (!fetch(serial, passwd, &bytes, error)) {
+    if (!fetch(serial, passwd, StoreKind::PostQuantum, &bytes, error, &status)) {
         return false;
     }
     // A password typed into `yb store` may end with a newline.
@@ -476,6 +752,76 @@ bool DeviceStorage::readPassword(const QString& location, QString* password, QSt
     }
     *password = QString::fromUtf8(bytes);
     bytes.fill('\0');
+    return true;
+}
+
+bool DeviceStorage::removePassword(const QString& location, QString* error)
+{
+    QString serial, blob;
+    StoreKind kind;
+    if (!parse(location, &serial, &blob) || !kindOf(serial, &kind, error)) {
+        return false;
+    }
+    QByteArray pin;
+    if (!pinFor(serial, kind, &pin, error)) {
+        return false;
+    }
+    const auto passwd = stem(blob) + ".passwd";
+    QString detail;
+    int tries = -1;
+    auto status = m_backend->remove(serial, passwd, pin, &detail, &tries);
+    pin.fill('\0');
+    if (status != Ok) {
+        if (status == WrongPin || status == PinBlocked || status == Replug || status == FewPinAttempts) {
+            forgetPin(serial);
+        }
+        *error = describe(status, detail, passwd, tries, kind);
+        return false;
+    }
+    return true;
+}
+
+bool DeviceStorage::canRememberPassword(const QString& location)
+{
+#ifdef Q_OS_WIN
+    Q_UNUSED(location)
+    return false;
+#else
+    QString serial, blob, error;
+    StoreKind kind;
+    return parse(location, &serial, &blob) && kindOf(serial, &kind, &error) && kind == StoreKind::PostQuantum;
+#endif
+}
+
+bool DeviceStorage::storePassword(const QString& location, const QString& password, QString* error)
+{
+    QString serial, blob;
+    if (!parse(location, &serial, &blob)) {
+        *error = tr("Not a device location: %1").arg(location);
+        return false;
+    }
+    if (!canRememberPassword(location)) {
+        *error = tr("The master password is kept only on a YubiKey with a post-quantum store.");
+        return false;
+    }
+    QByteArray pin;
+    if (!pinFor(serial, StoreKind::PostQuantum, &pin, error)) {
+        return false;
+    }
+    const auto passwd = stem(blob) + ".passwd";
+    auto bytes = password.toUtf8();
+    QString detail;
+    int tries = -1;
+    auto status = m_backend->store(serial, passwd, bytes, true, pin, &detail, &tries);
+    pin.fill('\0');
+    bytes.fill('\0');
+    if (status != Ok) {
+        if (status == WrongPin || status == PinBlocked || status == Replug || status == FewPinAttempts) {
+            forgetPin(serial);
+        }
+        *error = describe(status, detail, passwd, tries, StoreKind::PostQuantum);
+        return false;
+    }
     return true;
 }
 
@@ -497,6 +843,11 @@ void DeviceStorage::forgetPin(const QString& serial)
 void DeviceStorage::setBackend(std::unique_ptr<Backend> backend)
 {
     m_backend = backend ? std::move(backend) : defaultBackend();
+    m_backend->touchNotice = [this] {
+        if (m_touchNotice) {
+            m_touchNotice();
+        }
+    };
 }
 
 void DeviceStorage::setPinPrompt(PinPrompt prompt)
@@ -504,7 +855,23 @@ void DeviceStorage::setPinPrompt(PinPrompt prompt)
     m_pinPrompt = std::move(prompt);
 }
 
+void DeviceStorage::setUnverifiedReadPrompt(UnverifiedReadPrompt prompt)
+{
+    m_unverifiedReadPrompt = std::move(prompt);
+}
+
+void DeviceStorage::setNotice(Notice notice)
+{
+    m_notice = std::move(notice);
+}
+
+void DeviceStorage::setTouchNotice(TouchNotice notice)
+{
+    m_touchNotice = std::move(notice);
+}
+
 void DeviceStorage::clearCache()
 {
     m_cache.clear();
+    m_toldUnencrypted.clear();
 }

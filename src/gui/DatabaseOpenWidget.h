@@ -20,6 +20,8 @@
 #define KEEPASSX_DATABASEOPENWIDGET_H
 
 #include <QPointer>
+
+class QCheckBox;
 #include <QScopedPointer>
 #include <QTimer>
 
@@ -84,7 +86,12 @@ private slots:
     void hardwareKeyResponse(bool found);
 
 private:
+    void offerToDeleteIgnoredPassword();
+
     QPointer<DeviceListener> m_deviceListener;
+    /// Vaults on a post-quantum YubiKey store: keep the master password
+    /// there, encrypted (KeePassYB).
+    QCheckBox* m_rememberPassword = nullptr;
     bool m_pollingHardwareKey = false;
     bool m_manualHardwareKeyRefresh = false;
     bool m_blockQuickUnlock = false;

@@ -17,6 +17,7 @@
 
 #include "TestDeviceStorage.h"
 
+#include <QSet>
 #include <QTest>
 
 #include "core/Database.h"
@@ -33,14 +34,20 @@ namespace
     const QString Location = QStringLiteral("yubikey:/Passwords.kdbx");
 
     /// An in-memory YubiKey: blobs by name, each with a generation that
-    /// changes with every store.
+    /// changes with every store, and whether yb encrypted it.
     struct FakeDevice
     {
         QHash<QString, QByteArray> blobs;
         QHash<QString, quint32> generations;
+        QSet<QString> encrypted;
+        DeviceStorage::StoreKind kind = DeviceStorage::StoreKind::Legacy;
+        /// A locked YubiKey: every operation with the PIN fails so.
+        DeviceStorage::Status locked = DeviceStorage::Ok;
         quint32 nextGeneration = 1;
         int fetches = 0;
+        int unverifiedFetches = 0;
         int stores = 0;
+        int touches = 0;
         int pinTries = 3;
         bool full = false;
     };
@@ -48,9 +55,10 @@ namespace
     FakeDevice* fake = nullptr;
 
     /// A stand-in for libyubiblob, following its documented contract (yb
-    /// spec 0039): listing needs no PIN; a wrong PIN is WrongPin with the
-    /// tries left; a missing blob is NotFound; a store without room is
-    /// StoreFull and writes nothing.
+    /// specs 0039, 0028, 0044): listing needs no PIN; a wrong PIN is
+    /// WrongPin with the tries left; a missing blob is NotFound; a store
+    /// without room is StoreFull and writes nothing; post-quantum stores
+    /// ask for a touch per blob; reads without PIN refuse encrypted blobs.
     class FakeBackend : public DeviceStorage::Backend
     {
     public:
@@ -58,9 +66,18 @@ namespace
         {
             blobs->clear();
             for (auto it = fake->blobs.constBegin(); it != fake->blobs.constEnd(); ++it) {
-                blobs->append(
-                    {it.key(), static_cast<quint32>(it.value().size()), 0, fake->generations.value(it.key()), true});
+                blobs->append({it.key(),
+                               static_cast<quint32>(it.value().size()),
+                               0,
+                               fake->generations.value(it.key()),
+                               fake->encrypted.contains(it.key())});
             }
+            return DeviceStorage::Ok;
+        }
+
+        DeviceStorage::Status storeKind(const QString&, DeviceStorage::StoreKind* kind, QString*) override
+        {
+            *kind = fake->kind;
             return DeviceStorage::Ok;
         }
 
@@ -71,8 +88,8 @@ namespace
                                     QString* error,
                                     int* pinTries) override
         {
-            if (!pinOk(pin, error, pinTries)) {
-                return DeviceStorage::WrongPin;
+            if (auto status = withPin(pin, error, pinTries); status != DeviceStorage::Ok) {
+                return status;
             }
             if (!fake->blobs.contains(name)) {
                 *error = "no blob named " + name;
@@ -83,15 +100,32 @@ namespace
             return DeviceStorage::Ok;
         }
 
+        DeviceStorage::Status
+        fetchUnencrypted(const QString&, const QString& name, QByteArray* data, QString* error) override
+        {
+            if (!fake->blobs.contains(name)) {
+                *error = "no blob named " + name;
+                return DeviceStorage::NotFound;
+            }
+            if (fake->encrypted.contains(name)) {
+                *error = name + " is encrypted";
+                return DeviceStorage::Encrypted;
+            }
+            ++fake->unverifiedFetches;
+            *data = fake->blobs.value(name);
+            return DeviceStorage::Ok;
+        }
+
         DeviceStorage::Status store(const QString&,
                                     const QString& name,
                                     const QByteArray& data,
+                                    bool encrypt,
                                     const QByteArray& pin,
                                     QString* error,
                                     int* pinTries) override
         {
-            if (!pinOk(pin, error, pinTries)) {
-                return DeviceStorage::WrongPin;
+            if (auto status = withPin(pin, error, pinTries); status != DeviceStorage::Ok) {
+                return status;
             }
             if (fake->full) {
                 *error = "not enough free objects";
@@ -100,19 +134,43 @@ namespace
             ++fake->stores;
             fake->blobs.insert(name, data);
             fake->generations.insert(name, fake->nextGeneration++);
+            if (encrypt) {
+                fake->encrypted.insert(name);
+            } else {
+                fake->encrypted.remove(name);
+            }
+            return DeviceStorage::Ok;
+        }
+
+        DeviceStorage::Status
+        remove(const QString&, const QString& name, const QByteArray& pin, QString* error, int* pinTries) override
+        {
+            if (auto status = withPin(pin, error, pinTries); status != DeviceStorage::Ok) {
+                return status;
+            }
+            fake->blobs.remove(name);
+            fake->encrypted.remove(name);
             return DeviceStorage::Ok;
         }
 
     private:
-        static bool pinOk(const QByteArray& pin, QString* error, int* pinTries)
+        DeviceStorage::Status withPin(const QByteArray& pin, QString* error, int* pinTries)
         {
-            if (pin == Pin.toUtf8()) {
-                fake->pinTries = 3;
-                return true;
+            if (fake->locked != DeviceStorage::Ok) {
+                *error = "locked";
+                return fake->locked;
             }
-            *pinTries = --fake->pinTries;
-            *error = "wrong PIN";
-            return false;
+            if (pin != Pin.toUtf8()) {
+                *pinTries = --fake->pinTries;
+                *error = "wrong PIN";
+                return DeviceStorage::WrongPin;
+            }
+            fake->pinTries = 3;
+            if (fake->kind == DeviceStorage::StoreKind::PostQuantum && touchNotice) {
+                ++fake->touches;
+                touchNotice();
+            }
+            return DeviceStorage::Ok;
         }
     };
 
@@ -145,7 +203,10 @@ void TestDeviceStorage::init()
     fake = new FakeDevice;
     auto* storage = DeviceStorage::instance();
     storage->setBackend(std::make_unique<FakeBackend>());
-    storage->setPinPrompt([](const QString&) { return Pin; });
+    storage->setPinPrompt([](const QString&, DeviceStorage::StoreKind) { return Pin; });
+    storage->setUnverifiedReadPrompt({});
+    storage->setNotice({});
+    storage->setTouchNotice({});
     storage->clearCache();
     storage->forgetPin("");
 }
@@ -154,6 +215,9 @@ void TestDeviceStorage::cleanupTestCase()
 {
     DeviceStorage::instance()->setBackend(nullptr);
     DeviceStorage::instance()->setPinPrompt({});
+    DeviceStorage::instance()->setUnverifiedReadPrompt({});
+    DeviceStorage::instance()->setNotice({});
+    DeviceStorage::instance()->setTouchNotice({});
     delete fake;
     fake = nullptr;
 }
@@ -194,21 +258,30 @@ void TestDeviceStorage::testVaultName()
     QVERIFY(DeviceStorage::vaultName(QString(126, QChar(0xe9))).isEmpty());
 }
 
-/// A database saved to the device and opened from it: the bytes go through
-/// `yb store` and `yb fetch -p`, with the PIN on standard input.
+/// A database saved to the device and opened from it.  It is stored
+/// unencrypted by yb (its master key encrypts it), so a vault of a legacy
+/// store opens without the PIN.
 void TestDeviceStorage::testSaveAndOpen()
 {
     saveNewDatabase("on the YubiKey");
     QCOMPARE(fake->stores, 1);
     QVERIFY(fake->blobs.value("Passwords.kdbx").size() > 0);
+    QVERIFY(!fake->encrypted.contains("Passwords.kdbx"));
 
     DeviceStorage::instance()->clearCache();
+    DeviceStorage::instance()->forgetPin("");
+    int prompts = 0;
+    DeviceStorage::instance()->setPinPrompt([&prompts](const QString&, DeviceStorage::StoreKind) {
+        ++prompts;
+        return Pin;
+    });
     auto db = QSharedPointer<Database>::create();
     QString error;
     QVERIFY2(db->open(Location, key(), &error), qPrintable(error));
     QCOMPARE(db->metadata()->name(), QString("on the YubiKey"));
     QCOMPARE(db->filePath(), Location);
-    QCOMPARE(fake->fetches, 1);
+    QCOMPARE(fake->unverifiedFetches, 1);
+    QCOMPARE(prompts, 0);
     QVERIFY(!db->isModified());
 }
 
@@ -222,7 +295,7 @@ void TestDeviceStorage::testOpenUsesTheCache()
         QString error;
         QVERIFY2(db->open(Location, key(), &error), qPrintable(error));
     }
-    QCOMPARE(fake->fetches, 0);
+    QCOMPARE(fake->fetches + fake->unverifiedFetches, 0);
 }
 
 /// A vault changed on the device (another computer) is fetched again.
@@ -239,7 +312,7 @@ void TestDeviceStorage::testChangedVaultIsFetchedAgain()
     QString error;
     QVERIFY2(db->open(Location, key(), &error), qPrintable(error));
     QCOMPARE(db->metadata()->name(), QString("first"));
-    QCOMPARE(fake->fetches, 1);
+    QCOMPARE(fake->unverifiedFetches, 1);
 }
 
 /// A save the device refuses (store full) fails with a clear message, and
@@ -266,7 +339,7 @@ void TestDeviceStorage::testStoreFullKeepsTheDatabaseModified()
 void TestDeviceStorage::testPinIsAskedOnceAndForgotten()
 {
     int prompts = 0;
-    DeviceStorage::instance()->setPinPrompt([&prompts](const QString&) {
+    DeviceStorage::instance()->setPinPrompt([&prompts](const QString&, DeviceStorage::StoreKind) {
         ++prompts;
         return Pin;
     });
@@ -279,7 +352,7 @@ void TestDeviceStorage::testPinIsAskedOnceAndForgotten()
 
     // A cancelled prompt fails the save, and nothing is stored.
     DeviceStorage::instance()->forgetPin("");
-    DeviceStorage::instance()->setPinPrompt([](const QString&) { return QString(); });
+    DeviceStorage::instance()->setPinPrompt([](const QString&, DeviceStorage::StoreKind) { return QString(); });
     auto db = QSharedPointer<Database>::create();
     db->setKey(key());
     QString error;
@@ -288,21 +361,28 @@ void TestDeviceStorage::testPinIsAskedOnceAndForgotten()
 }
 
 /// Reading only the public headers (no key: KeePassXC restoring tabs at
-/// start-up) never asks for the PIN; unlocking does.
+/// start-up) never asks for the PIN: a legacy store's vault is read
+/// without it, a post-quantum store's is not read; unlocking asks once.
 void TestDeviceStorage::testHeaderReadDoesNotAskForThePin()
 {
     saveNewDatabase("restored");
     DeviceStorage::instance()->clearCache();
     DeviceStorage::instance()->forgetPin("");
     int prompts = 0;
-    DeviceStorage::instance()->setPinPrompt([&prompts](const QString&) {
+    DeviceStorage::instance()->setPinPrompt([&prompts](const QString&, DeviceStorage::StoreKind) {
         ++prompts;
         return Pin;
     });
 
-    auto headers = QSharedPointer<Database>::create();
+    // Legacy: read without the PIN (the vault is unencrypted).
     QString error;
-    QVERIFY(!headers->open(Location, nullptr, &error));
+    QSharedPointer<Database>::create()->open(Location, nullptr, &error);
+    QCOMPARE(prompts, 0);
+    QCOMPARE(fake->fetches, 0);
+
+    fake->kind = DeviceStorage::StoreKind::PostQuantum;
+    DeviceStorage::instance()->clearCache();
+    QVERIFY(!QSharedPointer<Database>::create()->open(Location, nullptr, &error));
     QCOMPARE(prompts, 0);
     QCOMPARE(fake->fetches, 0);
 
@@ -321,20 +401,22 @@ void TestDeviceStorage::testMissingVault()
 }
 
 /// A wrong PIN fails with the tries left, and is forgotten: the next
-/// operation asks again.
+/// operation asks again.  (A post-quantum store: reading needs its PIN.)
 void TestDeviceStorage::testWrongPin()
 {
     saveNewDatabase("pin");
+    fake->kind = DeviceStorage::StoreKind::PostQuantum;
     DeviceStorage::instance()->clearCache();
     DeviceStorage::instance()->forgetPin("");
     QStringList answers{"000000", Pin};
     int prompts = 0;
-    DeviceStorage::instance()->setPinPrompt([&](const QString&) { return answers.value(prompts++); });
+    DeviceStorage::instance()->setPinPrompt(
+        [&](const QString&, DeviceStorage::StoreKind) { return answers.value(prompts++); });
 
     auto db = QSharedPointer<Database>::create();
     QString error;
     QVERIFY(!db->open(Location, key(), &error));
-    QVERIFY2(error.contains("Wrong PIN (2 tries left)"), qPrintable(error));
+    QVERIFY2(error.contains("Wrong FIDO2 PIN (2 tries left)"), qPrintable(error));
     QVERIFY2(db->open(Location, key(), &error), qPrintable(error));
     QCOMPARE(prompts, 2);
 }
@@ -350,18 +432,189 @@ void TestDeviceStorage::testListVaults()
 }
 
 /// The vault's master password, kept on the YubiKey as `<vault>.passwd`,
-/// is read without its final newline; without one, nothing is read and
-/// nothing fails (KeePassXC then asks for the master password).
+/// is read without its final newline, only when it is encrypted in a
+/// post-quantum store; without a usable one, nothing is read and nothing
+/// fails (KeePassYB then asks for the master password).
 void TestDeviceStorage::testStoredMasterPassword()
 {
+    auto* storage = DeviceStorage::instance();
     QString password, error;
-    QVERIFY(DeviceStorage::instance()->readPassword(Location, &password, &error));
+    QVERIFY(storage->readPassword(Location, &password, &error));
     QVERIFY(password.isEmpty());
+    QVERIFY(!storage->hasStoredPassword(Location));
+    QVERIFY(storage->ignoredPasswordReason(Location).isEmpty());
 
-    QVERIFY(!DeviceStorage::instance()->hasStoredPassword(Location));
-
+    // Encrypted, in a post-quantum store: used.
+    fake->kind = DeviceStorage::StoreKind::PostQuantum;
     fake->blobs.insert("Passwords.passwd", "correct horse\n");
-    QVERIFY(DeviceStorage::instance()->hasStoredPassword(Location));
-    QVERIFY(DeviceStorage::instance()->readPassword(Location, &password, &error));
+    fake->encrypted.insert("Passwords.passwd");
+#ifndef Q_OS_WIN
+    QVERIFY(storage->hasStoredPassword(Location));
+    QVERIFY(storage->readPassword(Location, &password, &error));
     QCOMPARE(password, QString("correct horse"));
+    QVERIFY(storage->ignoredPasswordReason(Location).isEmpty());
+#endif
+
+    // Unencrypted: anyone holding the YubiKey could read it.
+    fake->encrypted.remove("Passwords.passwd");
+    QVERIFY(!storage->hasStoredPassword(Location));
+    QVERIFY(storage->readPassword(Location, &password, &error));
+    QVERIFY(password.isEmpty());
+    QVERIFY2(storage->ignoredPasswordReason(Location).contains("not used"), "unencrypted");
+
+    // In a legacy store: classical encryption.
+    fake->kind = DeviceStorage::StoreKind::Legacy;
+    fake->encrypted.insert("Passwords.passwd");
+    QVERIFY(!storage->hasStoredPassword(Location));
+    QVERIFY(storage->readPassword(Location, &password, &error));
+    QVERIFY(password.isEmpty());
+    QVERIFY(!storage->ignoredPasswordReason(Location).isEmpty());
+
+    // The user may delete it.
+    QVERIFY2(storage->removePassword(Location, &error), qPrintable(error));
+    QVERIFY(!fake->blobs.contains("Passwords.passwd"));
+    QVERIFY(storage->ignoredPasswordReason(Location).isEmpty());
+}
+
+/// A vault stored encrypted by an older version is rewritten unencrypted,
+/// and the user is told once.
+void TestDeviceStorage::testEncryptedVaultIsRewrittenUnencrypted()
+{
+    saveNewDatabase("old");
+    fake->encrypted.insert("Passwords.kdbx");
+    QStringList notices;
+    DeviceStorage::instance()->setNotice([&notices](const QString& message) { notices << message; });
+
+    // It still opens, with the PIN.
+    DeviceStorage::instance()->clearCache();
+    auto db = QSharedPointer<Database>::create();
+    QString error;
+    QVERIFY2(db->open(Location, key(), &error), qPrintable(error));
+    QCOMPARE(fake->fetches, 1);
+
+    db->metadata()->setName("new");
+    QVERIFY2(db->save(Database::Atomic, {}, &error), qPrintable(error));
+    QVERIFY(!fake->encrypted.contains("Passwords.kdbx"));
+    QCOMPARE(notices.size(), 1);
+    QVERIFY(notices.first().contains("now stored unencrypted"));
+    db->metadata()->setName("newer");
+    QVERIFY2(db->save(Database::Atomic, {}, &error), qPrintable(error));
+    QCOMPARE(notices.size(), 1);
+}
+
+/// A post-quantum store: the FIDO2 PIN is asked (named so), and each read
+/// or save asks for a touch, which the user is told about.
+void TestDeviceStorage::testPostQuantumAsksFido2PinAndTouch()
+{
+    fake->kind = DeviceStorage::StoreKind::PostQuantum;
+    QList<DeviceStorage::StoreKind> asked;
+    DeviceStorage::instance()->setPinPrompt([&asked](const QString&, DeviceStorage::StoreKind kind) {
+        asked << kind;
+        return Pin;
+    });
+    int notices = 0;
+    DeviceStorage::instance()->setTouchNotice([&notices] { ++notices; });
+    saveNewDatabase("pq");
+    DeviceStorage::instance()->clearCache();
+    auto db = QSharedPointer<Database>::create();
+    QString error;
+    QVERIFY2(db->open(Location, key(), &error), qPrintable(error));
+    QCOMPARE(asked, QList<DeviceStorage::StoreKind>{DeviceStorage::StoreKind::PostQuantum});
+    QCOMPARE(fake->touches, 2);
+    QCOMPARE(notices, 2);
+    QCOMPARE(fake->unverifiedFetches, 0);
+}
+
+/// A locked YubiKey (post-quantum store): the vault is read without the
+/// YubiKey's check only if the user agrees; the prompt says whether the
+/// vault is KDBX 3.1 (yb spec 0044, KeePassYB spec S2).
+void TestDeviceStorage::testLockedYubiKeyFallback()
+{
+    saveNewDatabase("locked");
+    // The version in the header: minor, major (2 bytes each, little-endian).
+    const auto setVersion = [](quint8 minor, quint8 major) {
+        auto bytes = fake->blobs.value("Passwords.kdbx");
+        bytes[8] = static_cast<char>(minor);
+        bytes[9] = 0;
+        bytes[10] = static_cast<char>(major);
+        bytes[11] = 0;
+        fake->blobs.insert("Passwords.kdbx", bytes);
+        fake->generations.insert("Passwords.kdbx", fake->nextGeneration++);
+    };
+    const auto original = fake->blobs.value("Passwords.kdbx");
+    setVersion(1, 4);
+    fake->kind = DeviceStorage::StoreKind::PostQuantum;
+    fake->locked = DeviceStorage::PinBlocked;
+    DeviceStorage::instance()->clearCache();
+    int prompts = 0;
+    bool sawKdbx3 = true;
+    bool agree = false;
+    DeviceStorage::instance()->setUnverifiedReadPrompt([&](const QString& blob, const QString& reason, bool kdbx3) {
+        ++prompts;
+        sawKdbx3 = kdbx3;
+        return agree && blob == "Passwords.kdbx" && reason.contains("FIDO2 PIN is blocked");
+    });
+
+    QByteArray data;
+    QString error;
+    QVERIFY(!DeviceStorage::instance()->read(Location, &data, &error));
+    QVERIFY2(error.contains("FIDO2 PIN is blocked"), qPrintable(error));
+    QCOMPARE(prompts, 1);
+    QVERIFY(!sawKdbx3);
+
+    agree = true;
+    fake->blobs.insert("Passwords.kdbx", original);
+    fake->generations.insert("Passwords.kdbx", fake->nextGeneration++);
+    auto db = QSharedPointer<Database>::create();
+    QVERIFY2(db->open(Location, key(), &error), qPrintable(error));
+    QCOMPARE(db->metadata()->name(), QString("locked"));
+    QCOMPARE(prompts, 2);
+
+    // A KDBX 3.1 header: the prompt is told, for its stronger warning.
+    setVersion(1, 3);
+    QVERIFY(DeviceStorage::instance()->read(Location, &data, &error));
+    QVERIFY(sawKdbx3);
+
+    // An encrypted vault cannot be read so.
+    fake->encrypted.insert("Passwords.kdbx");
+    fake->generations.insert("Passwords.kdbx", fake->nextGeneration++);
+    QVERIFY(!DeviceStorage::instance()->read(Location, &data, &error));
+    QCOMPARE(prompts, 3);
+}
+
+/// A legacy store's vault opens without the PIN even when the PIN is
+/// blocked: nothing to fall back from.
+void TestDeviceStorage::testLegacyVaultOpensWithLockedYubiKey()
+{
+    saveNewDatabase("legacy");
+    fake->locked = DeviceStorage::PinBlocked;
+    DeviceStorage::instance()->clearCache();
+    auto db = QSharedPointer<Database>::create();
+    QString error;
+    QVERIFY2(db->open(Location, key(), &error), qPrintable(error));
+    QCOMPARE(db->metadata()->name(), QString("legacy"));
+}
+
+/// The master password is kept on the YubiKey, encrypted, only in a
+/// post-quantum store (not on Windows yet).
+void TestDeviceStorage::testRememberPassword()
+{
+    auto* storage = DeviceStorage::instance();
+    QString error;
+    QVERIFY(!storage->canRememberPassword(Location));
+    QVERIFY(!storage->storePassword(Location, "secret", &error));
+    QVERIFY(!fake->blobs.contains("Passwords.passwd"));
+
+    fake->kind = DeviceStorage::StoreKind::PostQuantum;
+#ifdef Q_OS_WIN
+    QVERIFY(!storage->canRememberPassword(Location));
+#else
+    QVERIFY(storage->canRememberPassword(Location));
+    QVERIFY2(storage->storePassword(Location, "secret", &error), qPrintable(error));
+    QVERIFY(fake->encrypted.contains("Passwords.passwd"));
+    QVERIFY(storage->hasStoredPassword(Location));
+    QString password;
+    QVERIFY(storage->readPassword(Location, &password, &error));
+    QCOMPARE(password, QString("secret"));
+#endif
 }

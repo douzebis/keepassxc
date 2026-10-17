@@ -101,11 +101,32 @@ int main(int argc, char** argv)
 
     // Databases on a YubiKey (`yubikey:<serial>/<vault>.kdbx`, through yb):
     // the PIN is read from standard input when first needed.
-    DeviceStorage::instance()->setPinPrompt([](const QString& serial) {
-        Utils::STDERR << (serial.isEmpty() ? QObject::tr("YubiKey PIN: ")
-                                           : QObject::tr("PIN of YubiKey %1: ").arg(serial))
+    DeviceStorage::instance()->setPinPrompt([](const QString& serial, DeviceStorage::StoreKind kind) {
+        const auto pin =
+            kind == DeviceStorage::StoreKind::PostQuantum ? QObject::tr("FIDO2 PIN") : QObject::tr("PIV PIN");
+        Utils::STDERR << (serial.isEmpty() ? QObject::tr("YubiKey %1: ").arg(pin)
+                                           : QObject::tr("%1 of YubiKey %2: ").arg(pin, serial))
                       << Qt::flush;
         return Utils::getPassword();
+    });
+    DeviceStorage::instance()->setTouchNotice([] { Utils::STDERR << QObject::tr("Touch your YubiKey…") << Qt::endl; });
+    DeviceStorage::instance()->setNotice([](const QString& message) { Utils::STDERR << message << Qt::endl; });
+    // A vault of a locked YubiKey is read without its check only after the
+    // user agrees (yb spec 0044).
+    DeviceStorage::instance()->setUnverifiedReadPrompt([](const QString& blob, const QString& reason, bool kdbx3) {
+        Utils::STDERR << reason << Qt::endl
+                      << QObject::tr("%1 can be read without the YubiKey's integrity check: its master password "
+                                     "still protects it.")
+                             .arg(blob)
+                      << Qt::endl;
+        if (kdbx3) {
+            Utils::STDERR << QObject::tr("It uses the older KDBX 3.1 format, which does not fully detect changes "
+                                         "to its content: a modified database might open without notice.")
+                          << Qt::endl;
+        }
+        Utils::STDERR << QObject::tr("Read it anyway? [y/N] ") << Qt::flush;
+        const auto answer = Utils::STDIN.readLine().trimmed().toLower();
+        return answer == "y" || answer == "yes";
     });
     // Cleanup code pages after cli exits
     QObject::connect(&app, &QCoreApplication::destroyed, &app, [] { Utils::resetTextStreams(); });

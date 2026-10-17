@@ -28,6 +28,7 @@
 #include <QMimeData>
 #include <QShortcut>
 #include <QStatusBar>
+#include <QThread>
 #include <QTimer>
 #include <QToolButton>
 #include <QWindow>
@@ -450,16 +451,51 @@ MainWindow::MainWindow()
     connect(m_ui->actionDatabaseNew, SIGNAL(triggered()), m_ui->tabWidget, SLOT(newDatabase()));
     connect(m_ui->actionDatabaseOpen, SIGNAL(triggered()), m_ui->tabWidget, SLOT(openDatabase()));
 
-    // Databases stored on a YubiKey: the PIN, when the device needs it.
-    DeviceStorage::instance()->setPinPrompt([this](const QString& serial) {
+    // Databases stored on a YubiKey: the PIN, when the device needs it (the
+    // PIV PIN for a legacy store, the FIDO2 PIN for a post-quantum one).
+    auto* storage = DeviceStorage::instance();
+    storage->setPinPrompt([this](const QString& serial, DeviceStorage::StoreKind kind) {
+        const auto pin = kind == DeviceStorage::StoreKind::PostQuantum ? tr("FIDO2 PIN") : tr("PIV PIN");
         bool ok = false;
-        auto pin = QInputDialog::getText(this,
-                                         tr("YubiKey PIN"),
-                                         serial.isEmpty() ? tr("YubiKey PIN:") : tr("PIN of YubiKey %1:").arg(serial),
-                                         QLineEdit::Password,
-                                         {},
-                                         &ok);
-        return ok ? pin : QString();
+        auto entered = QInputDialog::getText(this,
+                                             tr("YubiKey %1").arg(pin),
+                                             serial.isEmpty() ? tr("YubiKey %1:").arg(pin)
+                                                              : tr("%1 of YubiKey %2:").arg(pin, serial),
+                                             QLineEdit::Password,
+                                             {},
+                                             &ok);
+        return ok ? entered : QString();
+    });
+    // Post-quantum stores: one touch per vault read or saved.
+    storage->setTouchNotice([this] {
+        QMetaObject::invokeMethod(
+            this,
+            [this] {
+                displayGlobalMessage(tr("Touch your YubiKey…"), MessageWidget::Information, false);
+                QCoreApplication::processEvents();
+            },
+            QThread::currentThread() == thread() ? Qt::DirectConnection : Qt::QueuedConnection);
+    });
+    storage->setNotice(
+        [this](const QString& message) { displayGlobalMessage(message, MessageWidget::Information, true); });
+    // A vault of a locked YubiKey is read without the YubiKey's check only
+    // after the user agrees (yb spec 0044).
+    storage->setUnverifiedReadPrompt([this](const QString& blob, const QString& reason, bool kdbx3) {
+        auto text = tr("%1<br><br>%2 can be opened anyway: its content is protected by your master password, "
+                       "but the YubiKey's own integrity check will be skipped. You will not be able to save it "
+                       "to this YubiKey while it is locked; use Save As to keep changes in a file.")
+                        .arg(reason.toHtmlEscaped(), blob.toHtmlEscaped());
+        if (kdbx3) {
+            text += tr("<br><br><b>This database uses the older KDBX 3.1 format, which does not fully detect "
+                       "changes to its content: without the YubiKey's check, a modified database might open "
+                       "without notice.</b> To avoid this, convert it: Database settings → Encryption → KDBX 4.");
+        }
+        return MessageBox::question(this,
+                                    tr("Open without the YubiKey's check?"),
+                                    text,
+                                    MessageBox::Open | MessageBox::Cancel,
+                                    MessageBox::Cancel)
+               == MessageBox::Open;
     });
     connect(m_ui->actionDatabaseSave, SIGNAL(triggered()), m_ui->tabWidget, SLOT(saveDatabase()));
     connect(m_ui->actionDatabaseSaveAs, SIGNAL(triggered()), m_ui->tabWidget, SLOT(saveDatabaseAs()));

@@ -33,6 +33,7 @@
 #include <QCloseEvent>
 #include <QDesktopServices>
 #include <QFont>
+#include <QSet>
 
 namespace
 {
@@ -56,6 +57,11 @@ DatabaseOpenWidget::DatabaseOpenWidget(QWidget* parent)
     m_ui->setupUi(this);
 
     m_ui->messageWidget->setHidden(true);
+
+    m_rememberPassword =
+        new QCheckBox(tr("Remember the master password on this YubiKey (the FIDO2 PIN and a touch replace it)"), this);
+    m_rememberPassword->setVisible(false);
+    m_ui->verticalLayout_2->insertWidget(1, m_rememberPassword);
 
     m_hideTimer.setInterval(clearFormsDelay);
     m_hideTimer.setSingleShot(true);
@@ -251,11 +257,20 @@ void DatabaseOpenWidget::load(const QString& filename)
 
     m_ui->fileNameLabel->setRawText(m_filename);
 
-    // The master password of a vault on a YubiKey may be stored there.
-    if (DeviceStorage::isDeviceLocation(m_filename) && DeviceStorage::instance()->hasStoredPassword(m_filename)) {
-        m_ui->messageWidget->showMessage(
-            tr("The master password is stored on the YubiKey: leave the password empty and click Unlock."),
-            MessageWidget::Information);
+    // The master password of a vault on a YubiKey may be stored there:
+    // used only if encrypted, in a post-quantum store (KeePassYB).
+    m_rememberPassword->setChecked(false);
+    m_rememberPassword->setVisible(false);
+    if (DeviceStorage::isDeviceLocation(m_filename)) {
+        auto* storage = DeviceStorage::instance();
+        if (storage->hasStoredPassword(m_filename)) {
+            m_ui->messageWidget->showMessage(
+                tr("The master password is stored on the YubiKey: leave the password empty and click Unlock."),
+                MessageWidget::Information);
+        } else {
+            m_rememberPassword->setVisible(storage->canRememberPassword(m_filename));
+            offerToDeleteIgnoredPassword();
+        }
     }
 
     // Set the public name if defined
@@ -334,6 +349,37 @@ void DatabaseOpenWidget::enterKey(const QString& pw, const QString& keyFile)
     openDatabase();
 }
 
+/**
+ * A master password stored on the YubiKey but not used (unencrypted, or in
+ * a legacy store): say why, and offer to delete it, once per vault and
+ * session (KeePassYB).
+ */
+void DatabaseOpenWidget::offerToDeleteIgnoredPassword()
+{
+    static QSet<QString> asked;
+    auto* storage = DeviceStorage::instance();
+    const auto reason = storage->ignoredPasswordReason(m_filename);
+    if (reason.isEmpty() || asked.contains(m_filename)) {
+        return;
+    }
+    asked.insert(m_filename);
+    const auto answer = MessageBox::question(this,
+                                             tr("Stored master password not used"),
+                                             tr("%1<br><br>Delete it from the YubiKey?").arg(reason.toHtmlEscaped()),
+                                             MessageBox::Delete | MessageBox::Cancel,
+                                             MessageBox::Cancel);
+    if (answer != MessageBox::Delete) {
+        return;
+    }
+    QString error;
+    if (storage->removePassword(m_filename, &error)) {
+        m_ui->messageWidget->showMessage(tr("The stored master password was deleted from the YubiKey."),
+                                         MessageWidget::Information);
+    } else {
+        m_ui->messageWidget->showMessage(error, MessageWidget::Error);
+    }
+}
+
 void DatabaseOpenWidget::openDatabase()
 {
     // Cache this variable for future use then reset
@@ -391,6 +437,18 @@ void DatabaseOpenWidget::openDatabase()
                 m_ui->messageWidget->showMessage(tr("Database unlock canceled."), MessageWidget::MessageType::Error);
                 setUserInteractionLock(false);
                 return;
+            }
+        }
+
+        // Keep the master password on the YubiKey, if asked (password only).
+        if (m_rememberPassword->isVisible() && m_rememberPassword->isChecked() && !m_ui->editPassword->text().isEmpty()
+            && m_ui->keyFileLineEdit->text().isEmpty()) {
+            QString deviceError;
+            if (!DeviceStorage::instance()->storePassword(m_filename, m_ui->editPassword->text(), &deviceError)) {
+                MessageBox::warning(
+                    this,
+                    tr("Master password not kept"),
+                    tr("The master password could not be kept on the YubiKey: %1").arg(deviceError.toHtmlEscaped()));
             }
         }
 

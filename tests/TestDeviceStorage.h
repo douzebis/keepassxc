@@ -40,6 +40,11 @@ private slots:
     void testWrongPin();
     void testListVaults();
     void testStoredMasterPassword();
+    void testEncryptedVaultIsRewrittenUnencrypted();
+    void testPostQuantumAsksFido2PinAndTouch();
+    void testLockedYubiKeyFallback();
+    void testLegacyVaultOpensWithLockedYubiKey();
+    void testRememberPassword();
 };
 
 #endif // KEEPASSXC_TESTDEVICESTORAGE_H

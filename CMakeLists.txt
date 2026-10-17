@@ -554,7 +554,8 @@ include_directories(SYSTEM ${MINIZIP_INCLUDE_DIR})
 # Find libyubiblob (yb) for databases stored on a YubiKey
 if(KPXC_FEATURE_YUBIBLOB)
     find_package(PkgConfig REQUIRED)
-    pkg_check_modules(YUBIBLOB REQUIRED IMPORTED_TARGET yubiblob>=0.1)
+    # 0.3: reads without the PIN (yb spec 0044)
+    pkg_check_modules(YUBIBLOB REQUIRED IMPORTED_TARGET yubiblob>=0.3)
     message(STATUS "Using libyubiblob ${YUBIBLOB_VERSION}")
 endif()
 
