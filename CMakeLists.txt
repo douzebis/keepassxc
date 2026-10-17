@@ -50,9 +50,12 @@ option(WITH_BUILD_QT "Build Qt6 as a dependency" OFF)
 
 # Advanced Features Control
 option(KPXC_MINIMAL "Build KeePassXC with the minimal feature set required for basic usage" OFF)
-option(KPXC_FEATURE_BROWSER "Browser integration and passkeys support" ON)
+# KeePassYB: off, as the browser extension and the Secret Service talk to
+# KeePassXC (its native messaging host, its D-Bus name), and update checks
+# look for KeePassXC releases (yb spec 0046 S5.4).
+option(KPXC_FEATURE_BROWSER "Browser integration and passkeys support" OFF)
 option(KPXC_FEATURE_SSHAGENT "SSH Agent integration" ON)
-option(KPXC_FEATURE_FDOSECRETS "freedesktop.org Secret Service integration; replace system keyring" ON)
+option(KPXC_FEATURE_FDOSECRETS "freedesktop.org Secret Service integration; replace system keyring" OFF)
 
 if(KPXC_MINIMAL)
     # Disable advanced features in minimal mode
@@ -63,9 +66,9 @@ endif()
 
 # Minor Feature Flags
 option(KPXC_FEATURE_NETWORK "Include code that reaches out to external networks (e.g. downloading icons)" ON)
-option(KPXC_FEATURE_UPDATES "Include automatic update checks; disable for managed distributions" ON)
+option(KPXC_FEATURE_UPDATES "Include automatic update checks; disable for managed distributions" OFF)
 option(KPXC_FEATURE_DOCS "Build offline documentation; requires asciidoctor tool" ON)
-option(KPXC_FEATURE_YUBIBLOB "Databases stored on a YubiKey; requires libyubiblob (yb)" OFF)
+option(KPXC_FEATURE_YUBIBLOB "Databases stored on a YubiKey; requires libyubiblob (yb)" ON)
 
 # Reconcile update feature with overall network feature
 if(NOT KPXC_FEATURE_NETWORK AND KPXC_FEATURE_UPDATES)
@@ -97,7 +100,9 @@ endif()
 
 # Initialize project
 project(KeePassXC)
-set(APP_ID "org.keepassxc.${PROJECT_NAME}")
+# KeePassYB, an unofficial fork of KeePassXC: its own identity (yb spec 0046
+# S5), so that it installs and runs next to KeePassXC.
+set(APP_ID "io.github.douzebis.KeePassYB")
 
 # Retrieve git HEAD revision hash
 set(GIT_HEAD_OVERRIDE "" CACHE STRING "Manually set the Git HEAD hash when missing (eg, when no .git folder exists)")
@@ -124,7 +129,11 @@ execute_process(COMMAND git tag --points-at HEAD
         OUTPUT_VARIABLE GIT_TAG
         ERROR_QUIET)
 string(REGEX REPLACE "latest" "" GIT_TAG "${GIT_TAG}")
-if(GIT_TAG MATCHES "[0-9]+\.[0-9]+\.[0-9]+")
+# KeePassYB's tags: v<KeePassXC version>-yb.<n>, e.g. v2.8.0-beta1-yb.1.
+string(REGEX MATCH "v[0-9]+\\.[0-9]+\\.[0-9]+[-.a-z0-9]*-yb\\.[0-9]+" YB_TAG "${GIT_TAG}")
+if(YB_TAG)
+    string(SUBSTRING "${YB_TAG}" 1 -1 OVERRIDE_VERSION)
+elseif(GIT_TAG MATCHES "[0-9]+\.[0-9]+\.[0-9]+")
     string(STRIP "${GIT_TAG}" GIT_TAG)
     set(OVERRIDE_VERSION ${GIT_TAG})
 elseif(EXISTS ${CMAKE_SOURCE_DIR}/.version)
@@ -133,7 +142,7 @@ endif()
 
 string(REGEX REPLACE "(\r?\n)+" "" OVERRIDE_VERSION "${OVERRIDE_VERSION}")
 if(OVERRIDE_VERSION)
-    if(OVERRIDE_VERSION MATCHES "^[\\.0-9]+$")
+    if(OVERRIDE_VERSION MATCHES "^[\\.0-9]+$" OR OVERRIDE_VERSION MATCHES "-yb\\.[0-9]+$")
         set(KEEPASSXC_BUILD_TYPE "Release")
     else()
         set(KEEPASSXC_BUILD_TYPE "Snapshot")
@@ -389,14 +398,14 @@ if(WIN32)
 endif()
 
 if(WIN32)
-    set(PROGNAME KeePassXC)
+    set(PROGNAME KeePassYB)
     set(CLI_INSTALL_DIR ".")
     set(PROXY_INSTALL_DIR ".")
     set(BIN_INSTALL_DIR ".")
     set(PLUGIN_INSTALL_DIR ".")
     set(DATA_INSTALL_DIR "share")
 elseif(APPLE AND WITH_APP_BUNDLE)
-    set(PROGNAME KeePassXC)
+    set(PROGNAME KeePassYB)
     set(BUNDLE_INSTALL_DIR "${PROGNAME}.app/Contents")
     set(CMAKE_INSTALL_MANDIR "${BUNDLE_INSTALL_DIR}/Resources/man")
     set(CLI_INSTALL_DIR "${BUNDLE_INSTALL_DIR}/MacOS")
@@ -407,12 +416,12 @@ elseif(APPLE AND WITH_APP_BUNDLE)
     add_definitions(-DWITH_APP_BUNDLE)
 else()
     include(GNUInstallDirs)
-    set(PROGNAME keepassxc)
+    set(PROGNAME keepassyb)
     set(CLI_INSTALL_DIR "${CMAKE_INSTALL_BINDIR}")
     set(PROXY_INSTALL_DIR "${CMAKE_INSTALL_BINDIR}")
     set(BIN_INSTALL_DIR "${CMAKE_INSTALL_BINDIR}")
-    set(PLUGIN_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}/keepassxc")
-    set(DATA_INSTALL_DIR "${CMAKE_INSTALL_DATADIR}/keepassxc")
+    set(PLUGIN_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}/keepassyb")
+    set(DATA_INSTALL_DIR "${CMAKE_INSTALL_DATADIR}/keepassyb")
 endif()
 
 if(WITH_COVERAGE)

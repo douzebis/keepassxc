@@ -54,9 +54,9 @@ Icons::Icons() = default;
 QString Icons::applicationIconName()
 {
 #ifdef KEEPASSXC_DIST_FLATPAK
-    return "org.keepassxc.KeePassXC";
+    return "io.github.douzebis.KeePassYB";
 #else
-    return "keepassxc";
+    return "keepassyb";
 #endif
 }
 
@@ -93,12 +93,12 @@ QIcon Icons::trayIcon(bool unlocked)
     QIcon i;
 #if defined(Q_OS_WIN)
     if (osUtils->isStatusBarDark()) {
-        i = icon(QString("keepassxc-monochrome-light%1").arg(suffix), false);
+        i = icon(QString("keepassyb-monochrome-light%1").arg(suffix), false);
     } else {
-        i = icon(QString("keepassxc-monochrome-dark%1").arg(suffix), false);
+        i = icon(QString("keepassyb-monochrome-dark%1").arg(suffix), false);
     }
 #elif defined(Q_OS_MACOS)
-    i = icon(QString("keepassxc-monochrome-light%1").arg(suffix), false);
+    i = icon(QString("keepassyb-monochrome-light%1").arg(suffix), false);
 #else
     i = icon(QString("%1-%2%3").arg(applicationIconName(), iconAppearance, suffix), false);
 #endif

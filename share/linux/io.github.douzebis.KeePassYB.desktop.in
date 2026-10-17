@@ -1,5 +1,5 @@
 [Desktop Entry]
-Name=KeePassXC
+Name=KeePassYB
 GenericName=Password Manager
 GenericName[ar]=مدير كلمات المرور
 GenericName[bg]=Мениджър на пароли
@@ -31,14 +31,11 @@ GenericName[tr]=Parola yöneticisi
 GenericName[uk]=Розпорядник паролів
 GenericName[zh_CN]=密码管理器
 GenericName[zh_TW]=密碼管理員
-Comment=Community-driven port of the Windows application “KeePass Password Safe”
-Comment[da]=Fællesskabsdrevet port af Windows-programmet “KeePass Password Safe”
-Comment[et]=Kogukonna arendatav port Windowsi programmist KeePass Password Safe
-Comment[ru]=Разработанный сообществом порт Windows-приложения KeePass Password Safe
-Exec=keepassxc %f
-TryExec=keepassxc
+Comment=KeePassXC with databases on a YubiKey (unofficial fork)
+Exec=keepassyb %f
+TryExec=keepassyb
 Icon=@APP_ICON_NAME@
-StartupWMClass=keepassxc
+StartupWMClass=keepassyb
 StartupNotify=false
 Terminal=false
 Type=Application

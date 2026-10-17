@@ -929,7 +929,7 @@ class Build(Command):
         env_path = ':'.join([bin_dir.as_posix(), _get_bin_path()])
         install_prefix = app_dir / install_prefix.lstrip('/')
         desktop_file = install_prefix / 'share/applications/org.keepassxc.KeePassXC.desktop'
-        icon_file = install_prefix / 'share/icons/hicolor/256x256/apps/keepassxc.png'
+        icon_file = install_prefix / 'share/icons/hicolor/256x256/apps/keepassyb.png'
         executables = (install_prefix / 'bin').glob('keepassxc*')
         app_run = src_dir / 'share/linux/appimage-apprun.sh'
 

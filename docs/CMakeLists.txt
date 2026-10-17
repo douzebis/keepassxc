@@ -53,8 +53,7 @@ if(UNIX)
         VERBATIM)
     add_custom_target(manpages ALL DEPENDS keepassxc.1 keepassxc-cli.1)
 
-    install(FILES
-        ${OUT_DIR}/keepassxc.1
-        ${OUT_DIR}/keepassxc-cli.1
-        DESTINATION ${CMAKE_INSTALL_MANDIR}/man1/)
+    # KeePassYB: under its own names, next to KeePassXC's.
+    install(FILES ${OUT_DIR}/keepassxc.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1/ RENAME keepassyb.1)
+    install(FILES ${OUT_DIR}/keepassxc-cli.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1/ RENAME keepassyb-cli.1)
 endif()

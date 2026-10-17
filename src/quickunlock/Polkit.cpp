@@ -39,7 +39,7 @@ namespace
 {
     QString getKeyName(const QUuid& dbUuid)
     {
-        static const QString keyPrefix = "keepassxc_polkit_keys_";
+        static const QString keyPrefix = "keepassyb_polkit_keys_";
         return keyPrefix + dbUuid.toString();
     }
 } // namespace
@@ -57,7 +57,7 @@ Polkit::Polkit()
        For any other distros, this path will need to be patched before compilation.
     */
     QDBusConnection bus =
-        QDBusConnection::connectToBus("unix:path=/run/dbus/system_bus_socket", "keepassxc_polkit_dbus");
+        QDBusConnection::connectToBus("unix:path=/run/dbus/system_bus_socket", "keepassyb_polkit_dbus");
 
     m_available = bus.isConnected();
     if (!m_available) {
@@ -159,7 +159,7 @@ bool Polkit::getKey(const QUuid& dbUuid, QByteArray& key)
 
     auto result = m_polkit->CheckAuthorization(
         subject,
-        "org.keepassxc.KeePassXC.unlockDatabase",
+        "io.github.douzebis.KeePassYB.unlockDatabase",
         details,
         0x00000001,
         // AllowUserInteraction - wait for user to authenticate

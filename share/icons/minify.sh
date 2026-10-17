@@ -6,9 +6,9 @@ YELLOW='\033[0;33m'
 # Build desktop icon
 echo "Creating desktop icon PNG..."
 if command -v "inkscape" &> /dev/null; then
-  inkscape -z -w 256 -h 256 icons/application/scalable/apps/keepassxc.svg -e icons/application/256x256/apps/keepassxc.png
+  inkscape -z -w 256 -h 256 icons/application/scalable/apps/keepassyb.svg -e icons/application/256x256/apps/keepassyb.png
 else
-  echo -e "${YELLOW}Could not find inkscape; keepassxc.png not built!${NC}"
+  echo -e "${YELLOW}Could not find inkscape; keepassyb.png not built!${NC}"
 fi
 
 # Minify SVG's

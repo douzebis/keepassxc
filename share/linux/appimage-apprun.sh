@@ -12,8 +12,8 @@ elif [ -v CHROME_WRAPPER ] || [ -v MOZ_LAUNCHED_CHILD ] || [ "$2" == "keepassxc-
     exec keepassxc-proxy "$@"
 else
     # --- Icon file setup ---
-    icon_source="$APPDIR/usr/share/icons/hicolor/256x256/apps/keepassxc.png"
-    icon_target="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/256x256/apps/keepassxc.png"
+    icon_source="$APPDIR/usr/share/icons/hicolor/256x256/apps/keepassyb.png"
+    icon_target="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/256x256/apps/keepassyb.png"
     mkdir -p "$(dirname "$icon_target")"
 
     # Copy icon if different or missing

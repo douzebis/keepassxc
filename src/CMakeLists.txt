@@ -425,8 +425,8 @@ if(WIN32)
     include(GenerateProductVersion)
     generate_product_version(
             WIN32_ResourceFiles
-            NAME "KeePassXC"
-            COMPANY_NAME "KeePassXC Team"
+            NAME "KeePassYB"
+            COMPANY_NAME "KeePassYB (unofficial fork of KeePassXC)"
             VERSION_MAJOR ${KEEPASSXC_VERSION_MAJOR}
             VERSION_MINOR ${KEEPASSXC_VERSION_MINOR}
             VERSION_PATCH ${KEEPASSXC_VERSION_PATCH}
@@ -435,14 +435,14 @@ if(WIN32)
     target_sources(${PROGNAME} PUBLIC ${WIN32_ResourceFiles})
 
 elseif(APPLE AND WITH_APP_BUNDLE)
-    set(MACOSX_BUNDLE_IDENTIFIER org.keepassxc.keepassxc)
-    set(MACOSX_BUNDLE_ICON_NAME keepassxc)
-    set(MACOSX_BUNDLE_APPLE_ENTITLEMENTS "${CMAKE_SOURCE_DIR}/share/macosx/keepassxc.entitlements")
+    set(MACOSX_BUNDLE_IDENTIFIER io.github.douzebis.keepassyb)
+    set(MACOSX_BUNDLE_ICON_NAME keepassyb)
+    set(MACOSX_BUNDLE_APPLE_ENTITLEMENTS "${CMAKE_SOURCE_DIR}/share/macosx/keepassyb.entitlements")
     configure_file("${CMAKE_SOURCE_DIR}/share/macosx/Info.plist.in" ${CMAKE_CURRENT_BINARY_DIR}/Info.plist)
-    install(FILES "${CMAKE_SOURCE_DIR}/share/macosx/embedded.provisionprofile" DESTINATION ${BUNDLE_INSTALL_DIR})
+    # KeePassYB: no provisioning profile (KeePassXC's is tied to its Apple
+    # team), no asset catalog (KeePassXC's icon): the .icns only.
     set(MACOSX_BUNDLE_RESOURCE_FILES
-            "${CMAKE_SOURCE_DIR}/share/macosx/Assets.car"
-            "${CMAKE_SOURCE_DIR}/share/macosx/keepassxc.icns"
+            "${CMAKE_SOURCE_DIR}/share/macosx/keepassyb.icns"
     )
     set_target_properties(${PROGNAME} PROPERTIES
             MACOSX_BUNDLE ON
@@ -516,23 +516,24 @@ if(WIN32)
     set(CPACK_PACKAGE_VENDOR "${PROGNAME} Team")
     set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_BINARY_DIR}/INSTALLER_LICENSE.txt")
     set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
-    set(CPACK_NSIS_MUI_ICON "${CMAKE_SOURCE_DIR}/share/windows/keepassxc.ico")
+    set(CPACK_NSIS_MUI_ICON "${CMAKE_SOURCE_DIR}/share/windows/keepassyb.ico")
     set(CPACK_NSIS_MUI_UNIICON "${CPACK_NSIS_MUI_ICON}")
     set(CPACK_NSIS_INSTALLED_ICON_NAME "\\\\${PROGNAME}.exe")
     set(CPACK_NSIS_MUI_WELCOMEFINISHPAGE_BITMAP "${CMAKE_SOURCE_DIR}/share/windows/installer-wizard.png")
     set(CPACK_NSIS_MUI_UNWELCOMEFINISHPAGE_BITMAP "${CMAKE_SOURCE_DIR}/share/windows/installer-wizard.png")
     set(CPACK_NSIS_CREATE_ICONS_EXTRA "CreateShortCut '$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\${PROGNAME}.lnk' '$INSTDIR\\\\${PROGNAME}.exe'")
     set(CPACK_NSIS_DELETE_ICONS_EXTRA "Delete '$SMPROGRAMS\\\\$START_MENU\\\\${PROGNAME}.lnk'")
-    set(CPACK_NSIS_EXTRA_PREINSTALL_COMMANDS "ExecWait 'Taskkill /IM KeePassXC.exe'")
+    set(CPACK_NSIS_EXTRA_PREINSTALL_COMMANDS "ExecWait 'Taskkill /IM KeePassYB.exe'")
     set(CPACK_NSIS_EXTRA_PREINSTALL_COMMANDS "${CPACK_NSIS_EXTRA_PREINSTALL_COMMANDS}\nExecWait 'Taskkill /IM keepassxc-proxy.exe /F'")
-    set(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "ExecWait 'Taskkill /IM KeePassXC.exe'")
+    set(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "ExecWait 'Taskkill /IM KeePassYB.exe'")
     set(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "${CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS}\nExecWait 'Taskkill /IM keepassxc-proxy.exe /F'")
-    set(CPACK_NSIS_URL_INFO_ABOUT "https://keepassxc.org")
+    set(CPACK_NSIS_URL_INFO_ABOUT "https://github.com/douzebis/keepassyb")
     set(CPACK_NSIS_DISPLAY_NAME ${PROGNAME})
     set(CPACK_NSIS_PACKAGE_NAME "${PROGNAME} v${KEEPASSXC_VERSION}")
     set(CPACK_NSIS_MUI_FINISHPAGE_RUN "../${PROGNAME}.exe")
-    set(CPACK_WIX_UPGRADE_GUID 88785A72-3EAE-4F29-89E3-BC6B19BA9A5B)
-    set(CPACK_WIX_PRODUCT_ICON "${CMAKE_SOURCE_DIR}/share/windows/keepassxc.ico")
+    # KeePassYB's own (KeePassXC's would make the installer replace KeePassXC).
+    set(CPACK_WIX_UPGRADE_GUID FE37D065-4C33-48F5-B5EF-2DB3567DF02D)
+    set(CPACK_WIX_PRODUCT_ICON "${CMAKE_SOURCE_DIR}/share/windows/keepassyb.ico")
     set(CPACK_WIX_UI_BANNER "${CMAKE_SOURCE_DIR}/share/windows/installer-banner.png")
     set(CPACK_WIX_UI_DIALOG "${CMAKE_SOURCE_DIR}/share/windows/installer-wizard.png")
     set(CPACK_WIX_UI_REF "KPXC_InstallDir")
@@ -542,7 +543,7 @@ if(WIN32)
             "${CMAKE_SOURCE_DIR}/share/windows/KPXC_InstallDir.wxs"
             "${CMAKE_SOURCE_DIR}/share/windows/KPXC_InstallDirDlg.wxs"
             "${CMAKE_SOURCE_DIR}/share/windows/KPXC_ExitDlg.wxs")
-    set(CPACK_WIX_PROPERTY_ARPURLINFOABOUT  "https://keepassxc.org")
+    set(CPACK_WIX_PROPERTY_ARPURLINFOABOUT  "https://github.com/douzebis/keepassyb")
     set(CPACK_WIX_EXTENSIONS "WixUtilExtension.dll")
     string(TOLOWER "${CMAKE_CXX_COMPILER_ARCHITECTURE_ID}" _windows_package_arch)
     if(NOT _windows_package_arch)

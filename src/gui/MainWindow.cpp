@@ -79,7 +79,7 @@
 #include "mainwindowadaptor.h"
 #endif
 
-const QString MainWindow::BaseWindowTitle = "KeePassXC";
+const QString MainWindow::BaseWindowTitle = "KeePassYB";
 
 MainWindow* g_MainWindow = nullptr;
 MainWindow* getMainWindow()
@@ -101,8 +101,8 @@ MainWindow::MainWindow()
 #if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS) && !defined(QT_NO_DBUS)
     new MainWindowAdaptor(this);
     QDBusConnection dbus = QDBusConnection::sessionBus();
-    dbus.registerObject("/keepassxc", this);
-    dbus.registerService("org.keepassxc.KeePassXC.MainWindow");
+    dbus.registerObject("/keepassyb", this);
+    dbus.registerService("io.github.douzebis.KeePassYB.MainWindow");
 #endif
 
     setAcceptDrops(true);
@@ -400,6 +400,8 @@ MainWindow::MainWindow()
 
     m_ui->actionAbout->setIcon(icons()->icon("help-about"));
     m_ui->actionDonate->setIcon(icons()->icon("donate"));
+    // KeePassYB: KeePassXC's donations are KeePassXC's; no donation link here.
+    m_ui->actionDonate->setVisible(false);
     m_ui->actionBugReport->setIcon(icons()->icon("bugreport"));
     m_ui->actionGettingStarted->setIcon(icons()->icon("getting-started"));
     m_ui->actionUserGuide->setIcon(icons()->icon("user-guide"));
@@ -671,7 +673,7 @@ MainWindow::MainWindow()
     });
 
     if (config()->get(Config::Messages_HidePreReleaseWarning) != KEEPASSXC_VERSION) {
-        m_ui->globalMessageWidget->showMessage(tr("WARNING: You are using a development snapshot build of KeePassXC.\n"
+        m_ui->globalMessageWidget->showMessage(tr("WARNING: You are using a development snapshot build of KeePassYB.\n"
                                                   "Maintain a backup of your databases in the event of unknown bugs.\n"
                                                   "This version is not meant for production use."),
                                                MessageWidget::Warning,
@@ -1191,7 +1193,8 @@ void MainWindow::openDonateUrl()
 
 void MainWindow::openBugReportUrl()
 {
-    customOpenUrl("https://github.com/keepassxreboot/keepassxc/issues");
+    // KeePassYB: problems go to the fork, never to KeePassXC.
+    customOpenUrl("https://github.com/douzebis/keepassyb/issues");
 }
 
 void MainWindow::openGettingStartedGuide()
@@ -1586,7 +1589,7 @@ void MainWindow::updateTrayIcon()
 
             auto* actionToggle = new QAction(tr("Toggle window"), menu);
             menu->addAction(actionToggle);
-            actionToggle->setIcon(icons()->icon("keepassxc-monochrome-dark"));
+            actionToggle->setIcon(icons()->icon("keepassyb-monochrome-dark"));
 
             menu->addAction(m_ui->actionLockAllDatabases);
 

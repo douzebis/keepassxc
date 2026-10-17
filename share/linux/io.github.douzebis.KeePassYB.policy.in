@@ -3,13 +3,13 @@
  "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
  "http://www.freedesktop.org/standards/PolicyKit/1.0/policyconfig.dtd">
 <policyconfig>
-  <vendor>KeePassXC Developers</vendor>
+  <vendor>KeePassYB (unofficial fork of KeePassXC)</vendor>
   <vendor_url></vendor_url>
   <icon_name>@APP_ICON_NAME@</icon_name>
   
-  <action id="org.keepassxc.KeePassXC.unlockDatabase">
-    <description>Quick Unlock for a KeePassXC Database</description>
-    <message>Authentication is required to unlock a KeePassXC Database</message>
+  <action id="io.github.douzebis.KeePassYB.unlockDatabase">
+    <description>Quick Unlock for a KeePassYB Database</description>
+    <message>Authentication is required to unlock a KeePassYB Database</message>
     <defaults>
       <allow_inactive>no</allow_inactive>
       <allow_active>auth_self</allow_active>

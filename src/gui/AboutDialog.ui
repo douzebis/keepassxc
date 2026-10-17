@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>About KeePassXC</string>
+   <string>About KeePassYB</string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout_2" stretch="0,1,0">
    <item>
@@ -59,7 +59,7 @@
         </font>
        </property>
        <property name="text">
-        <string notr="true">&lt;span style=&quot;font-size: 20pt&quot;&gt; KeePassXC ${VERSION}&lt;/span&gt;</string>
+        <string notr="true">&lt;span style=&quot;font-size: 20pt&quot;&gt; KeePassYB ${VERSION}&lt;/span&gt;</string>
        </property>
        <property name="margin">
         <number>0</number>
@@ -90,7 +90,7 @@
           </sizepolicy>
          </property>
          <property name="text">
-          <string notr="true">Website: &lt;a href=&quot;https://keepassxc.org/&quot; style=&quot;text-decoration: underline&quot;&gt;https://keepassxc.org&lt;/a&gt;</string>
+          <string>KeePassYB is an unofficial fork of KeePassXC that can keep databases on a YubiKey (yb). It is not affiliated with or endorsed by the KeePassXC Team.&lt;br&gt;Website: &lt;a href=&quot;https://github.com/douzebis/keepassyb&quot; style=&quot;text-decoration: underline&quot;&gt;https://github.com/douzebis/keepassyb&lt;/a&gt;, based on &lt;a href=&quot;https://keepassxc.org/&quot; style=&quot;text-decoration: underline&quot;&gt;KeePassXC&lt;/a&gt;</string>
          </property>
          <property name="openExternalLinks">
           <bool>true</bool>
@@ -100,7 +100,7 @@
        <item>
         <widget class="QLabel" name="label_5">
          <property name="text">
-          <string>Report bugs at: &lt;a href=&quot;https://github.com/keepassxreboot/keepassxc/issues&quot; style=&quot;text-decoration: underline;&quot;&gt;https://github.com&lt;/a&gt;</string>
+          <string>Report problems to &lt;a href=&quot;https://github.com/douzebis/keepassyb/issues&quot; style=&quot;text-decoration: underline;&quot;&gt;KeePassYB&lt;/a&gt;, not to KeePassXC.</string>
          </property>
          <property name="openExternalLinks">
           <bool>true</bool>
@@ -132,7 +132,7 @@
           </sizepolicy>
          </property>
          <property name="text">
-          <string>KeePassXC is distributed under the terms of the GNU General Public License (GPL) version 2 or (at your option) version 3.</string>
+          <string>KeePassYB, like KeePassXC, is distributed under the terms of the GNU General Public License (GPL) version 2 or (at your option) version 3.</string>
          </property>
          <property name="wordWrap">
           <bool>true</bool>

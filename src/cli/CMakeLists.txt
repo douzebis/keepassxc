@@ -66,6 +66,8 @@ target_link_libraries(cli
         PUBLIC Qt6::Core)
 
 add_executable(keepassxc-cli keepassxc-cli.cpp)
+# KeePassYB: its own command name, next to KeePassXC's.
+set_target_properties(keepassxc-cli PROPERTIES OUTPUT_NAME keepassyb-cli)
 target_link_libraries(keepassxc-cli
         PRIVATE ${GPGERROR_LIBRARIES} cli keepassxc_core line_reader)
 

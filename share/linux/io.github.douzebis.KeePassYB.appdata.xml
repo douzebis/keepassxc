@@ -1,0 +1,30 @@
+<?xml version='1.0' encoding='utf-8'?>
+<!-- Copyright 2026 Frederic Ruget <fred@atlant.is> -->
+<component type="desktop-application">
+  <id>io.github.douzebis.KeePassYB</id>
+  <name>KeePassYB</name>
+  <summary>KeePassXC with databases on a YubiKey (unofficial fork)</summary>
+  <developer id="io.github.douzebis">
+    <name>Frederic Ruget</name>
+  </developer>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <description>
+    <p>KeePassYB is an unofficial fork of KeePassXC that can keep password databases on a YubiKey, through yb
+      (https://github.com/douzebis/yb), instead of in a file. It is not affiliated with or endorsed by the KeePassXC
+      Team.</p>
+    <p>A database on the YubiKey is never written to the computer's disk; it opens with the YubiKey, and saving
+      replaces it safely: an interrupted save keeps the previous version. Everything else is KeePassXC.</p>
+  </description>
+  <launchable type="desktop-id">io.github.douzebis.KeePassYB.desktop</launchable>
+  <url type="homepage">https://github.com/douzebis/keepassyb</url>
+  <url type="bugtracker">https://github.com/douzebis/keepassyb/issues</url>
+  <categories>
+    <category>Utility</category>
+    <category>Security</category>
+  </categories>
+  <provides>
+    <binary>keepassyb</binary>
+  </provides>
+  <content_rating type="oars-1.1"/>
+</component>

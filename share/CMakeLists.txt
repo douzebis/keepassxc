@@ -26,35 +26,35 @@ if(UNIX AND NOT APPLE AND NOT HAIKU)
     # Flatpak requires all host accessible files to use filenames based upon the app id
     if(KEEPASSXC_DIST_FLATPAK)
         set(APP_ICON_NAME "${APP_ID}")
-        set(MIME_ICON "${APP_ID}-application-x-keepassxc")
-        configure_file(linux/keepassxc.xml.in ${CMAKE_CURRENT_BINARY_DIR}/linux/${APP_ID}.xml @ONLY)
+        set(MIME_ICON "${APP_ID}-application-x-keepassyb")
+        configure_file(linux/keepassyb.xml.in ${CMAKE_CURRENT_BINARY_DIR}/linux/${APP_ID}.xml @ONLY)
         install(FILES ${CMAKE_CURRENT_BINARY_DIR}/linux/${APP_ID}.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/mime/packages)
 
         file(GLOB_RECURSE ICON_FILES LIST_DIRECTORIES false
-             "icons/application/*/keepassxc*.png"
-             "icons/application/*/*keepassxc*.svg")
+             "icons/application/*/keepassyb*.png"
+             "icons/application/*/*keepassyb*.svg")
         foreach(icon_match ${ICON_FILES})
             get_filename_component(icon_name ${icon_match} NAME)
             get_filename_component(icon_dir ${icon_match} DIRECTORY)
-            # Prefix all icons with application id: "org.keepassxc.KeePassXC"
-            string(REGEX REPLACE "^keepassxc(.*)?(\\.png|\\.svg)$" "${APP_ID}\\1\\2" icon_name ${icon_name})
-            string(REGEX REPLACE "^(application-x-keepassxc\\.svg)$" "${APP_ID}-\\1" icon_name ${icon_name})
+            # Prefix all icons with application id: "io.github.douzebis.KeePassYB"
+            string(REGEX REPLACE "^keepassyb(.*)?(\\.png|\\.svg)$" "${APP_ID}\\1\\2" icon_name ${icon_name})
+            string(REGEX REPLACE "^(application-x-keepassyb\\.svg)$" "${APP_ID}-\\1" icon_name ${icon_name})
             # Find icon sub dir ex. "scalable/mimetypes/"
             file(RELATIVE_PATH icon_subdir ${CMAKE_CURRENT_SOURCE_DIR}/icons/application ${icon_dir})
             install(FILES ${icon_match} DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/${icon_subdir}
                     RENAME ${icon_name})
         endforeach()
     else()
-        set(APP_ICON_NAME "keepassxc")
-        set(MIME_ICON "application-x-keepassxc")
-        configure_file(linux/keepassxc.xml.in ${CMAKE_CURRENT_BINARY_DIR}/linux/keepassxc.xml @ONLY)
-        install(FILES ${CMAKE_CURRENT_BINARY_DIR}/linux/keepassxc.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/mime/packages)
+        set(APP_ICON_NAME "keepassyb")
+        set(MIME_ICON "application-x-keepassyb")
+        configure_file(linux/keepassyb.xml.in ${CMAKE_CURRENT_BINARY_DIR}/linux/keepassyb.xml @ONLY)
+        install(FILES ${CMAKE_CURRENT_BINARY_DIR}/linux/keepassyb.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/mime/packages)
 
         install(DIRECTORY icons/application/ DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor
                 FILES_MATCHING PATTERN "keepassx*.png" PATTERN "keepassx*.svg"
                 PATTERN "status" EXCLUDE PATTERN "actions" EXCLUDE PATTERN "categories" EXCLUDE)
         install(DIRECTORY icons/application/ DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor
-                FILES_MATCHING PATTERN "application-x-keepassxc.svg" PATTERN "status"
+                FILES_MATCHING PATTERN "application-x-keepassyb.svg" PATTERN "status"
                 EXCLUDE PATTERN "actions" EXCLUDE PATTERN "categories" EXCLUDE)
     endif(KEEPASSXC_DIST_FLATPAK)
     configure_file(linux/${APP_ID}.desktop.in ${CMAKE_CURRENT_BINARY_DIR}/linux/${APP_ID}.desktop @ONLY)
@@ -71,32 +71,19 @@ if(WIN32)
   install(FILES windows/qt.conf DESTINATION ${BIN_INSTALL_DIR})
 endif()
 
-install(FILES icons/application/256x256/apps/keepassxc.png DESTINATION ${DATA_INSTALL_DIR}/icons/application/256x256/apps)
+install(FILES icons/application/256x256/apps/keepassyb.png DESTINATION ${DATA_INSTALL_DIR}/icons/application/256x256/apps)
 
 add_custom_target(icons)
 add_custom_command(TARGET icons
         POST_BUILD
         COMMAND bash ./icons/minify.sh
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
-if(APPLE)
-    add_custom_command(TARGET icons
-            POST_BUILD
-            COMMAND xcrun actool share/macosx/keepassxc.icon
-                --compile share/macosx
-                --output-partial-info-plist /dev/null
-                --app-icon keepassxc
-                --include-all-app-icons
-                --enable-on-demand-resources NO
-                --target-device mac
-                --minimum-deployment-target 11.0
-                --platform macosx
-                --output-format human-readable-text
-            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
-endif()
+# KeePassYB: macOS uses share/macosx/keepassyb.icns only (no asset
+# catalog, which KeePassXC compiles from its own icon).
 
 # ICO for Windows
 add_custom_command(TARGET icons
     POST_BUILD
-    COMMAND bash ./windows/create-ico.sh icons/application/scalable/apps/keepassxc.svg windows/keepassxc.ico
-    COMMAND bash ./windows/create-ico.sh icons/application/scalable/mimetypes/application-x-keepassxc.svg windows/keepassxc-kdbx.ico
+    COMMAND bash ./windows/create-ico.sh icons/application/scalable/apps/keepassyb.svg windows/keepassyb.ico
+    COMMAND bash ./windows/create-ico.sh icons/application/scalable/mimetypes/application-x-keepassyb.svg windows/keepassyb-kdbx.ico
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})

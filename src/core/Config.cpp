@@ -537,16 +537,16 @@ void Config::init(const QString& configFileName, const QString& localConfigFileN
 
 #if defined(Q_OS_LINUX)
     // Upgrade from previous KeePassXC version which stores its config
-    // in ~/.cache on Linux instead of ~/.local/state.
+    // in ~/.cache on Linux (KeePassYB: its own folder, never KeePassXC's) instead of ~/.local/state.
     // Move file to correct location before continuing.
     if (!QFile::exists(localConfigFileName)) {
         QString oldLocalConfigPath =
-            QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation) + "/keepassxc";
+            QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation) + "/keepassyb";
         QString suffix;
 #ifdef QT_DEBUG
         suffix = "_debug";
 #endif
-        oldLocalConfigPath += QString("/keepassxc%1.ini").arg(suffix);
+        oldLocalConfigPath += QString("/keepassyb%1.ini").arg(suffix);
         oldLocalConfigPath = QDir::toNativeSeparators(oldLocalConfigPath);
         if (QFile::exists(oldLocalConfigPath)) {
             QDir().mkpath(QFileInfo(localConfigFileName).absolutePath());
@@ -570,7 +570,7 @@ QPair<QString, QString> Config::defaultConfigFiles()
 {
     // Check if we are running in portable mode, if so store the config files local to the app
     if (isPortable()) {
-        return {portableConfigDir().append("/keepassxc.ini"), portableConfigDir().append("/keepassxc_local.ini")};
+        return {portableConfigDir().append("/keepassyb.ini"), portableConfigDir().append("/keepassyb_local.ini")};
     }
 
     QString configPath;
@@ -584,7 +584,7 @@ QPair<QString, QString> Config::defaultConfigFiles()
     localConfigPath = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
 #else
     // On case-sensitive Operating Systems, force use of lowercase app directories
-    configPath = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + "/keepassxc";
+    configPath = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + "/keepassyb";
     // Qt does not support XDG_STATE_HOME yet, change this once XDG_STATE_HOME is added
     QString xdgStateHome = QFile::decodeName(qgetenv("XDG_STATE_HOME"));
     if (!xdgStateHome.startsWith(u'/')) {
@@ -594,7 +594,7 @@ QPair<QString, QString> Config::defaultConfigFiles()
         xdgStateHome = QDir::homePath() + "/.local/state";
     }
 
-    localConfigPath = xdgStateHome + "/keepassxc";
+    localConfigPath = xdgStateHome + "/keepassyb";
 #endif
 
     QString suffix;
@@ -602,8 +602,8 @@ QPair<QString, QString> Config::defaultConfigFiles()
     suffix = "_debug";
 #endif
 
-    configPath += QString("/keepassxc%1.ini").arg(suffix);
-    localConfigPath += QString("/keepassxc%1.ini").arg(suffix);
+    configPath += QString("/keepassyb%1.ini").arg(suffix);
+    localConfigPath += QString("/keepassyb%1.ini").arg(suffix);
 
     // Allow overriding the default location with env vars
     const auto& env = QProcessEnvironment::systemEnvironment();

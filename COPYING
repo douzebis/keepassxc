@@ -50,13 +50,16 @@ Files: cmake/GenerateProductVersion.cmake
 Copyright: 2015 halex2005 <akharlov@gmail.com>
 License: MIT
 
-Files: share/icons/application/scalable/apps/keepassxc.svg
-       share/icons/application/scalable/apps/keepassxc-dark.svg
-       share/icons/application/scalable/apps/keepassxc-locked.svg
-       share/icons/application/scalable/apps/keepassxc-unlocked.svg
-       share/icons/application/scalable/mimetypes/application-x-keepassxc.svg
-Copyright: 2016, Lorenzo Stella <lorenzo.stl@gmail.com>
-License: LGPL-2
+Files: share/icons/application/scalable/apps/keepassyb*.svg
+       share/icons/application/scalable/mimetypes/application-x-keepassyb.svg
+       share/icons/application/256x256/apps/keepassyb.png
+       share/windows/keepassyb.ico
+       share/windows/keepassyb-kdbx.ico
+       share/macosx/keepassyb.icns
+Copyright: 2026, Frederic Ruget <fred@atlant.is>
+License: GPL-2 or GPL-3
+Comment: KeePassYB's icons (unofficial fork of KeePassXC); they replace
+ KeePassXC's application icons, which KeePassYB does not use.
 
 Files: share/icons/database/C00_Password.svg
        share/icons/database/C01_Package_Network.svg
@@ -232,15 +235,10 @@ Files: share/icons/application/scalable/actions/application-exit.svg
        share/icons/application/scalable/actions/web.svg
        share/icons/application/scalable/actions/yubikey-refresh.svg
        share/icons/application/scalable/apps/internet-web-browser.svg
-       share/icons/application/scalable/apps/keepassxc.svg
-       share/icons/application/scalable/apps/keepassxc-dark.svg
-       share/icons/application/scalable/apps/keepassxc-locked.svg
-       share/icons/application/scalable/apps/keepassxc-unlocked.svg
        share/icons/application/scalable/apps/preferences-desktop-icons.svg
        share/icons/application/scalable/apps/preferences-system-network-sharing.svg
        share/icons/application/scalable/apps/utilities-terminal.svg
        share/icons/application/scalable/categories/preferences-other.svg
-       share/icons/application/scalable/mimetypes/application-x-keepassxc.svg
        share/icons/application/scalable/status/dialog-error.svg
        share/icons/application/scalable/status/dialog-information.svg
        share/icons/application/scalable/status/dialog-warning.svg

@@ -3,7 +3,7 @@
     <qresource prefix="/icons">
         <file>application/index.theme</file>
 
-        <file>application/256x256/apps/keepassxc.png</file>
+        <file>application/256x256/apps/keepassyb.png</file>
 
         <file>application/scalable/actions/application-exit.svg</file>
         <file>application/scalable/actions/arrow-collapse-down.svg</file>
@@ -102,20 +102,20 @@
         <file>application/scalable/actions/yubikey-refresh.svg</file>
         <file>application/scalable/apps/freedesktop.svg</file>
         <file>application/scalable/apps/internet-web-browser.svg</file>
-        <file>application/scalable/apps/keepassxc.svg</file>
-        <file>application/scalable/apps/keepassxc-monochrome-dark.svg</file>
-        <file>application/scalable/apps/keepassxc-monochrome-dark-locked.svg</file>
-        <file>application/scalable/apps/keepassxc-monochrome-light.svg</file>
-        <file>application/scalable/apps/keepassxc-monochrome-light-locked.svg</file>
-        <file>application/scalable/apps/keepassxc-locked.svg</file>
-        <file>application/scalable/apps/keepassxc-unlocked.svg</file>
+        <file>application/scalable/apps/keepassyb.svg</file>
+        <file>application/scalable/apps/keepassyb-monochrome-dark.svg</file>
+        <file>application/scalable/apps/keepassyb-monochrome-dark-locked.svg</file>
+        <file>application/scalable/apps/keepassyb-monochrome-light.svg</file>
+        <file>application/scalable/apps/keepassyb-monochrome-light-locked.svg</file>
+        <file>application/scalable/apps/keepassyb-locked.svg</file>
+        <file>application/scalable/apps/keepassyb-unlocked.svg</file>
         <file>application/scalable/apps/preferences-desktop-icons.svg</file>
         <file>application/scalable/apps/preferences-system-network-sharing.svg</file>
         <file>application/scalable/apps/utilities-terminal.svg</file>
 
         <file>application/scalable/categories/preferences-other.svg</file>
 
-        <file>application/scalable/mimetypes/application-x-keepassxc.svg</file>
+        <file>application/scalable/mimetypes/application-x-keepassyb.svg</file>
 
         <file>application/scalable/status/dialog-error.svg</file>
         <file>application/scalable/status/dialog-information.svg</file>
